@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FootballPolyEdge · 世界杯实时盘口 & 套利</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">⚽ FootballPolyEdge <span class="sub">世界杯 · Polymarket 实时盘口 &amp; Edge</span></div>
+    <div class="status">
+      <span id="ws-dot" class="dot"></span>
+      <span id="ws-text">连接中…</span>
+      <span class="pill" id="token-count">tokens: –</span>
+      <span class="pill" id="game-count">games: –</span>
+      <span class="pill edge" id="edge-count">edges: 0</span>
+      <span class="muted" id="updated">–</span>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <label><input type="checkbox" id="only-edges" /> 仅有<b class="t-arb">无风险套利</b>的比赛</label>
+    <label><input type="checkbox" id="only-value" /> 仅有<b class="t-val">模型价值</b>的比赛</label>
+    <label><input type="checkbox" id="only-live" /> 仅进行中</label>
+    <span class="sep">|</span>
+    <label>本金 $<input type="number" id="bankroll" value="100" min="1" step="10" /></label>
+    <label>最低执行价 <input type="number" id="min-price" value="5" min="0" max="100" step="1" />¢</label>
+    <label><input type="checkbox" id="exec-only" checked /> 价值表仅显示可成交</label>
+    <span class="muted">¢=美分 · ask买/bid卖 · 闪动=刚更新 ·
+      矩阵 Δ 配色：<span class="lg-buy">红=市场低估(买)</span> / <span class="lg-sell">蓝=市场高估(卖)</span> ·
+      建议注=¼Kelly(单注≤本金20%，受盘口量限制)</span>
+  </div>
+
+  <main id="games" class="games"></main>
+
+  <footer class="footnote">
+    数据来源 Polymarket Gamma / CLOB WebSocket。Edge 基于最优盘口价，<b>未扣除手续费、gas、滑点</b>，
+    且需可同时成交，仅供观测参考，不构成下单建议。
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
