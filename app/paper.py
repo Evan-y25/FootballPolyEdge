@@ -37,7 +37,15 @@ class PaperTrader:
         self._seq = 0
         self._lock = threading.Lock()
         self.auto = None  # set by main; provides live params for exit signals
+        self.store = None  # set by main; journals trades for replay
         self._load()
+
+    def _journal(self, pos: dict) -> None:
+        if self.store is not None:
+            try:
+                self.store.record_trade(pos)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("trade journal failed: %s", exc)
 
     def _param(self, key: str, default: float) -> float:
         if self.auto is not None:
@@ -107,6 +115,7 @@ class PaperTrader:
             self.positions.append(pos)
             self._save()
         logger.info("PAPER open #%d %s %s:%s %s $%.2f @ %.3f", pos["id"], slug, market, label, side, stake, ask)
+        self._journal(pos)
         return {"ok": True, "position": pos}
 
     def add_to(self, pos_id: int, stake: float) -> dict:
@@ -134,9 +143,10 @@ class PaperTrader:
             pos["add_stake"] = round(stake, 2)
             self._save()
         logger.info("PAPER add #%d +$%.2f @ %.3f avg=%.3f", pos_id, stake, ask, pos["entry_price"])
+        self._journal(pos)
         return {"ok": True, "position": pos}
 
-    def close(self, pos_id: int) -> dict:
+    def close(self, pos_id: int, reason: str = "manual") -> dict:
         with self._lock:
             pos = next((p for p in self.positions if p["id"] == pos_id and p["status"] == "open"), None)
             if not pos:
@@ -151,9 +161,40 @@ class PaperTrader:
             pos["proceeds"] = round(proceeds, 2)
             pos["realized_pnl"] = round(proceeds - pos["stake"], 2)
             pos["closed_at"] = int(time.time())
+            pos["close_reason"] = reason
             self._save()
         logger.info("PAPER close #%d @ %.3f pnl=%.2f", pos_id, bid, pos["realized_pnl"])
+        self._journal(pos)
         return {"ok": True, "position": pos}
+
+    def settle(self, slug: str, winners: dict) -> list:
+        """
+        Settle open positions on a resolved game at the TRUE outcome (1.0 / 0.0),
+        not a stale bid. winners: (market,label) -> 'yes'|'no'. Returns settled positions.
+        """
+        settled = []
+        with self._lock:
+            for pos in self.positions:
+                if pos["status"] != "open" or pos["slug"] != slug:
+                    continue
+                winner = winners.get((pos["market"], pos["label"]))
+                if winner not in ("yes", "no"):
+                    continue
+                value = 1.0 if pos["side"] == winner else 0.0
+                proceeds = pos["shares"] * value
+                pos["status"] = "closed"
+                pos["close_price"] = value
+                pos["proceeds"] = round(proceeds, 2)
+                pos["realized_pnl"] = round(proceeds - pos["stake"], 2)
+                pos["closed_at"] = int(time.time())
+                pos["close_reason"] = "settled"
+                settled.append(pos)
+            if settled:
+                self._save()
+        for pos in settled:
+            self._journal(pos)
+            logger.info("PAPER settle #%d %s %s=%s pnl=%.2f", pos["id"], pos["label"], pos["side"], value, pos["realized_pnl"])
+        return settled
 
     def reset(self) -> dict:
         with self._lock:

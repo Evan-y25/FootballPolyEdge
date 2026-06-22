@@ -10,16 +10,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
-
 import pathlib
+import time
+from datetime import datetime, timezone
 
 from aiohttp import web
 
-from . import config, gamma
+from . import config, gamma, genome
 from .autotrader import AutoTrader
+from .evolve import Evolver
 from .paper import PaperTrader
 from .server import Broadcaster, build_app
 from .state import AppState
+from .store import Store
 from .ws_client import MarketWebSocket
 
 logging.basicConfig(
@@ -53,6 +56,61 @@ async def refresh_loop(state: AppState, ws: MarketWebSocket, broadcaster: Broadc
             logger.warning("refresh failed: %s", exc)
 
 
+async def sampler_loop(state: AppState, store: Store) -> None:
+    """Persist orderbook ticks (on-change) for every tracked token, for replay."""
+    while True:
+        await asyncio.sleep(config.SAMPLE_INTERVAL)
+        try:
+            now = int(time.time())
+            written = 0
+            for g in state.games:
+                store.upsert_game(g.slug, g.home, g.away, g.kickoff, now)
+                legs = [("1x2", o) for o in (g.home_win, g.draw, g.away_win) if o]
+                legs += [("score", o) for o in g.scores]
+                for market, o in legs:
+                    for side, token in (("yes", o.yes_token), ("no", o.no_token)):
+                        if not token:
+                            continue
+                        b = state.token_best(token)
+                        if not b["live"]:
+                            continue
+                        if store.record_tick(now, token, g.slug, market, o.label, side,
+                                             b["bid"], b["ask"], b["bid_size"], b["ask_size"]):
+                            written += 1
+            if written:
+                store.commit()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("sampler failed: %s", exc)
+
+
+async def resolution_loop(state: AppState, store: Store, paper, evolver) -> None:
+    """Finished games: fetch outcomes -> settle paper positions at TRUE value -> evolve."""
+    while True:
+        await asyncio.sleep(config.RESOLUTION_INTERVAL)
+        try:
+            resolved = store.resolved_slugs()
+            for slug in store.known_game_slugs():
+                if slug in resolved:
+                    continue
+                res = await gamma.fetch_resolution(slug)
+                if not res or not res["resolved"]:
+                    continue
+                ts = int(time.time())
+                for market, label, yes_t, no_t, winner in res["rows"]:
+                    store.record_resolution(slug, market, label, yes_t, no_t, winner, ts)
+                logger.info("Resolved %s (%d markets)", slug, len(res["rows"]))
+                # Settle held paper positions at the true 0/1 outcome (not stale bid).
+                paper.settle(slug, store.resolution_map(slug))
+                # Per-match self-evolution.
+                if evolver is not None:
+                    try:
+                        evolver.on_match_resolved(slug)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("evolve failed for %s: %s", slug, exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("resolution sweep failed: %s", exc)
+
+
 async def run() -> None:
     ws = MarketWebSocket()
     state = AppState(ws)
@@ -61,6 +119,13 @@ async def run() -> None:
     paper = PaperTrader(state, paper_path, config.PAPER_START_CASH)
     auto = AutoTrader(state, paper)
     paper.auto = auto  # let paper read live auto params for exit signals
+    genome.save(config.GENOME_PATH, auto.params)  # materialize the committable genome file
+    pathlib.Path(config.DATA_DIR).mkdir(parents=True, exist_ok=True)
+    store = Store(config.DB_PATH)
+    paper.store = store  # journal trades for replay
+    evolver = Evolver(store, auto, autocommit=config.EVOLVE_AUTOCOMMIT) if config.EVOLVE_ENABLED else None
+    logger.info("Store at %s | %s | evolve=%s autocommit=%s",
+                config.DB_PATH, store.stats(), config.EVOLVE_ENABLED, config.EVOLVE_AUTOCOMMIT)
 
     @ws.on_update
     def _on_token_update(token_id: str) -> None:
@@ -76,6 +141,9 @@ async def run() -> None:
         refresh_loop(state, ws, broadcaster), name="refresh"
     )
     auto_task = asyncio.create_task(auto.run(), name="autotrader")
+    sampler_task = asyncio.create_task(sampler_loop(state, store), name="sampler")
+    resolution_task = asyncio.create_task(
+        resolution_loop(state, store, paper, evolver), name="resolution")
 
     # HTTP server.
     app = build_app(state, broadcaster, paper, auto)
@@ -89,8 +157,9 @@ async def run() -> None:
         await asyncio.Event().wait()  # run forever
     finally:
         ws.stop()
-        for t in (ws_task, push_task, refresh_task, auto_task):
+        for t in (ws_task, push_task, refresh_task, auto_task, sampler_task, resolution_task):
             t.cancel()
+        store.close()
         await runner.cleanup()
 
 

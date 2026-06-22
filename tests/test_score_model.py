@@ -156,3 +156,4 @@ if __name__ == "__main__":
         except Exception as e:  # noqa: BLE001
             print(f"ERROR {fn.__name__}: {e}")
     print(f"\n{passed}/{len(funcs)} passed")
+    sys.exit(0 if passed == len(funcs) else 1)

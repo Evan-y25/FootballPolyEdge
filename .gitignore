@@ -9,3 +9,6 @@ ReferenceProject/
 
 # Paper-trading state
 paper_positions.json
+
+# SQLite replay store
+data/

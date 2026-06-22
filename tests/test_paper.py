@@ -74,3 +74,4 @@ if __name__ == "__main__":
         except AssertionError as e:
             print(f"FAIL {fn.__name__}: {e}")
     print(f"\n{passed}/{len(fns)} passed")
+    sys.exit(0 if passed == len(fns) else 1)

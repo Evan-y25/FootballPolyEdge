@@ -59,6 +59,18 @@ VALUE_EDGE_THRESHOLD = _float("VALUE_EDGE_THRESHOLD", 0.02)
 PAPER_START_CASH = _float("PAPER_START_CASH", 100.0)
 PAPER_STOP_LOSS = _float("PAPER_STOP_LOSS", 0.5)  # -50% -> stop-loss signal (manual panel)
 
+# ---- Persistence / replay (SQLite) ----
+import pathlib as _pathlib
+
+DATA_DIR = os.environ.get("DATA_DIR", str(_pathlib.Path(__file__).resolve().parent.parent / "data"))
+DB_PATH = os.environ.get("DB_PATH", str(_pathlib.Path(DATA_DIR) / "market.db"))
+SAMPLE_INTERVAL = _int("SAMPLE_INTERVAL", 15)        # seconds between tick samples
+RESOLUTION_INTERVAL = _int("RESOLUTION_INTERVAL", 600)  # seconds between resolution sweeps
+# Strategy genome (committed to git on each adopted evolution).
+GENOME_PATH = os.environ.get("GENOME_PATH", str(_pathlib.Path(__file__).resolve().parent.parent / "genome.json"))
+EVOLVE_ENABLED = os.environ.get("EVOLVE_ENABLED", "0") in ("1", "true", "True")
+EVOLVE_AUTOCOMMIT = os.environ.get("EVOLVE_AUTOCOMMIT", "0") in ("1", "true", "True")
+
 # ---- Auto-trader (自动交易，仅模拟盘) ----
 AUTO_INTERVAL = _int("AUTO_INTERVAL", 5)              # scan interval seconds
 AUTO_EDGE_THRESHOLD = _float("AUTO_EDGE_THRESHOLD", 0.03)   # min edge to open

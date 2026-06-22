@@ -1,0 +1,19 @@
+{
+  "bankroll": 100.0,
+  "edge_threshold": 0.03,
+  "min_price": 0.5,
+  "take_profit": 0.1,
+  "stop_loss": 0.3,
+  "max_positions": 20,
+  "max_per_game": 3,
+  "max_exposure": 0.95,
+  "force_close_min": 10,
+  "hold_to_settle_price": 0.8,
+  "max_spread": 0.08,
+  "add_drop": 0.1,
+  "reentry_cooldown": 300,
+  "stop_loss_enabled": true,
+  "addon_enabled": true,
+  "addon_pre_match_only": true,
+  "direction": "both"
+}

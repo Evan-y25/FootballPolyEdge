@@ -308,6 +308,75 @@ async def fetch_world_cup_games() -> List[Game]:
     return games
 
 
+async def _fetch_event_by_slug(session: aiohttp.ClientSession, slug: str) -> Optional[Dict[str, Any]]:
+    url = f"{config.GAMMA_HOST}/events/slug/{slug}"
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            if resp.status != 200:
+                return None
+            return await resp.json()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _market_winner(market: Dict[str, Any]) -> Optional[str]:
+    """Resolved binary market: 'yes' if YES settled to 1, 'no' if NO did, else None."""
+    if not market.get("closed"):
+        return None
+    prices = _parse_json_field(market.get("outcomePrices"), None)
+    if not prices or len(prices) < 2:
+        return None
+    try:
+        yes, no = float(prices[0]), float(prices[1])
+    except (TypeError, ValueError):
+        return None
+    if yes >= 0.99:
+        return "yes"
+    if no >= 0.99:
+        return "no"
+    return None
+
+
+async def fetch_resolution(base_slug: str) -> Optional[dict]:
+    """
+    Fetch settled outcomes for a finished game (1X2 + exact-score events).
+    Returns {"resolved": bool, "rows": [(market,label,yes_token,no_token,winner), ...]}
+    or None if the events can't be fetched. resolved=False means not settled yet.
+    """
+    async with aiohttp.ClientSession() as session:
+        ev_1x2 = await _fetch_event_by_slug(session, base_slug)
+        ev_score = await _fetch_event_by_slug(session, base_slug + EXACT_SCORE_SUFFIX)
+
+    if not ev_1x2 and not ev_score:
+        return None
+
+    rows: List[tuple] = []
+    any_open = False
+
+    if ev_1x2:
+        home, away = _split_title(ev_1x2.get("title", ""))
+        for m in ev_1x2.get("markets", []):
+            yes, no = _tokens(m)
+            leg = _classify_1x2(m.get("groupItemTitle", ""), m.get("question", ""), home, away)
+            winner = _market_winner(m)
+            if winner is None and not m.get("closed"):
+                any_open = True
+            rows.append(("1x2", leg, yes, no, winner or "unknown"))
+
+    if ev_score:
+        home, away = _split_title(ev_score.get("title", "").replace(" - Exact Score", ""))
+        for m in ev_score.get("markets", []):
+            yes, no = _tokens(m)
+            label = _score_label(m.get("groupItemTitle", ""), home, away)
+            winner = _market_winner(m)
+            if winner is None and not m.get("closed"):
+                any_open = True
+            rows.append(("score", label, yes, no, winner or "unknown"))
+
+    resolved = bool(rows) and not any_open and all(r[4] != "unknown" for r in rows)
+    return {"resolved": resolved, "rows": rows}
+
+
 def filter_by_window(games: List[Game], days: int) -> List[Game]:
     """Keep games kicking off within `days` (plus already-live games). days<=0 -> all."""
     if days <= 0:

@@ -28,7 +28,7 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Deque, Dict
 
-from . import config
+from . import config, genome
 from .paper import PaperTrader
 from .state import AppState
 
@@ -49,23 +49,6 @@ def kelly_stake(edge: float, price: float, size: float, bankroll: float) -> floa
 
 
 class AutoTrader:
-    # Editable params: key -> (kind, lo, hi). kind: "frac" (0-1) or "int".
-    PARAM_SPEC = {
-        "bankroll": ("num", 1.0, 1000000.0),
-        "edge_threshold": ("frac", 0.0, 0.5),
-        "min_price": ("frac", 0.0, 1.0),
-        "take_profit": ("frac", 0.0, 5.0),
-        "stop_loss": ("frac", 0.0, 1.0),
-        "max_positions": ("int", 1, 200),
-        "max_per_game": ("int", 1, 50),
-        "max_exposure": ("frac", 0.0, 1.0),
-        "force_close_min": ("int", 0, 240),
-        "hold_to_settle_price": ("frac", 0.0, 1.0),
-        "max_spread": ("frac", 0.0, 1.0),
-        "add_drop": ("frac", 0.0, 1.0),
-        "reentry_cooldown": ("int", 0, 86400),
-    }
-
     def __init__(self, state: AppState, paper: PaperTrader) -> None:
         self.state = state
         self.paper = paper
@@ -73,22 +56,9 @@ class AutoTrader:
         self.last_run = 0
         self.log: Deque[dict] = deque(maxlen=40)
         self._cooldown: Dict[tuple, int] = {}  # (slug,market,label,side) -> closed_ts
-        # Runtime-editable params, seeded from config defaults.
-        self.params: Dict[str, float] = {
-            "bankroll": paper.start_cash,
-            "edge_threshold": config.AUTO_EDGE_THRESHOLD,
-            "min_price": config.AUTO_MIN_PRICE,
-            "take_profit": config.AUTO_TAKE_PROFIT,
-            "stop_loss": config.AUTO_STOP_LOSS,
-            "max_positions": config.AUTO_MAX_POSITIONS,
-            "max_per_game": config.AUTO_MAX_PER_GAME,
-            "max_exposure": config.AUTO_MAX_EXPOSURE,
-            "force_close_min": config.AUTO_FORCE_CLOSE_MIN,
-            "hold_to_settle_price": config.AUTO_HOLD_TO_SETTLE_PRICE,
-            "max_spread": config.AUTO_MAX_SPREAD,
-            "add_drop": config.AUTO_ADD_DROP,
-            "reentry_cooldown": config.AUTO_REENTRY_COOLDOWN,
-        }
+        # The genome IS the params: loaded from the committable genome.json file.
+        self.params: Dict = genome.load(config.GENOME_PATH)
+        self.paper.start_cash = self.params["bankroll"]
 
     def _p(self, key: str):
         return self.params[key]
@@ -96,20 +66,15 @@ class AutoTrader:
     def set_params(self, updates: dict) -> dict:
         applied = {}
         for key, raw in (updates or {}).items():
-            spec = self.PARAM_SPEC.get(key)
-            if not spec:
+            cv = genome.coerce(key, raw)
+            if cv is None:
                 continue
-            kind, lo, hi = spec
-            try:
-                val = int(round(float(raw))) if kind == "int" else float(raw)
-            except (TypeError, ValueError):
-                continue
-            val = max(lo, min(hi, val))
-            self.params[key] = val
-            applied[key] = val
+            self.params[key] = cv
+            applied[key] = cv
             if key == "bankroll":
-                self.paper.start_cash = val  # bankroll IS the paper account size
+                self.paper.start_cash = cv  # bankroll IS the paper account size
         if applied:
+            genome.save(config.GENOME_PATH, self.params)  # persist (committable)
             self._note("system", "参数更新: " + ", ".join(f"{k}={v}" for k, v in applied.items()))
         return self.status()
 
@@ -119,7 +84,7 @@ class AutoTrader:
             "enabled": self.enabled,
             "last_run": self.last_run,
             "params": {**self.params, "interval": config.AUTO_INTERVAL},
-            "spec": {k: v[0] for k, v in self.PARAM_SPEC.items()},
+            "spec": {k: v[0] for k, v in genome.GENOME_SPEC.items()},
             "log": list(self.log),
         }
 
@@ -167,11 +132,23 @@ class AutoTrader:
                     continue
                 upcoming = g["status"] == "upcoming"
                 side = "yes" if e["side"] == "buy_yes" else "no"
+                if not self._direction_ok(side):
+                    continue
                 qual[(g["slug"], e["label"], side)] = {**e, "home": g["home"], "away": g["away"], "upcoming": upcoming}
         return qual
 
+    def _direction_ok(self, side: str) -> bool:
+        d = self.params.get("direction", "both")
+        if d == "no_only":
+            return side == "no"
+        if d == "yes_only":
+            return side == "yes"
+        return True
+
     # ---- average-down (补仓，仅一次) ----
     def _addon_pass(self) -> None:
+        if not self.params.get("addon_enabled", True):
+            return
         snap = self.paper.snapshot()
         opens = snap["open"]
         exposure = sum(p["stake"] for p in opens)
@@ -179,12 +156,15 @@ class AutoTrader:
         if budget < config.AUTO_MIN_STAKE:
             return
         qual = self._qualifying_edges()
+        pre_only = self.params.get("addon_pre_match_only", True)
         for p in opens:
             if p.get("added"):
                 continue  # only once per position
             e = qual.get((p["slug"], p["label"], p["side"]))
             if not e:
                 continue  # no longer meets entry conditions at current price
+            if pre_only and not e.get("upcoming", False):
+                continue  # don't average down into a live (likely-real) move
             entry = p["entry_price"]
             if entry <= 0:
                 continue
@@ -209,7 +189,7 @@ class AutoTrader:
             reason = self._close_reason(p, now)
             if not reason:
                 continue
-            res = self.paper.close(p["id"])
+            res = self.paper.close(p["id"], reason=reason)
             if res.get("ok"):
                 pos = res["position"]
                 # Block immediate re-entry of the same instrument.
@@ -226,8 +206,8 @@ class AutoTrader:
         if game is None:
             return "settle"
         pct = p["unrealized_pct"] / 100.0
-        # Stop-loss applies in BOTH modes (disaster protection).
-        if pct <= -self.params["stop_loss"]:
+        # Stop-loss applies in BOTH modes (disaster protection) — if enabled.
+        if self.params.get("stop_loss_enabled", True) and pct <= -self.params["stop_loss"]:
             return "stop-loss"
         if self._is_hold_to_settle(p):
             return None  # ride to settlement; only stop-loss / settle exit
@@ -278,6 +258,8 @@ class AutoTrader:
                 if sp is None or sp > self.params["max_spread"]:
                     continue
                 side = "yes" if e["side"] == "buy_yes" else "no"
+                if not self._direction_ok(side):
+                    continue
                 candidates.append((e["edge"], g["slug"], g["home"], g["away"], e, side))
 
         candidates.sort(key=lambda c: c[0], reverse=True)
