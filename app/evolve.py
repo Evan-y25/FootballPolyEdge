@@ -44,7 +44,9 @@ async def evolution_sweep(store, paper, evolver) -> dict:
     from . import gamma
     out = {"resolved_now": [], "evolved": []}
     resolved = store.resolved_slugs()
-    for slug in store.known_game_slugs():
+    # Universe = games we traded (∪ currently tracked) — we only care to evolve traded games.
+    candidates = set(store.traded_slugs()) | set(store.known_game_slugs())
+    for slug in candidates:
         if slug in resolved:
             continue
         res = await gamma.fetch_resolution(slug)

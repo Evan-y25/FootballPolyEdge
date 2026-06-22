@@ -126,6 +126,10 @@ class Store:
         with self._lock:
             return [r[0] for r in self._conn.execute("SELECT slug FROM games").fetchall()]
 
+    def traded_slugs(self) -> List[str]:
+        with self._lock:
+            return [r[0] for r in self._conn.execute("SELECT DISTINCT slug FROM trades").fetchall()]
+
     # ---- resolutions ----------------------------------------------------
     def record_resolution(self, slug: str, market: str, label: str,
                           yes_token: str, no_token: str, winner: str, ts: int) -> None:
