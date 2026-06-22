@@ -225,6 +225,8 @@ body {
 .pf input { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 3px 6px; font-size: 12px; }
 .pf-actions { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
 .pbtn.save { color: #161b22; background: var(--green); border-color: var(--green); font-weight: 700; }
+.pbtn.run { color: #161b22; background: var(--gold); border-color: var(--gold); font-weight: 700; }
+.pbtn.run:disabled { opacity: .6; cursor: wait; }
 
 .auto-bar { margin-top: 6px; font-size: 11px; }
 .arules { margin-bottom: 3px; }

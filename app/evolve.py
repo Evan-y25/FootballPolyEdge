@@ -38,6 +38,34 @@ MIN_TRADES = 3          # need at least this many closed trades to change anythi
 MAX_CHANGES = 2         # at most this many params changed per match
 
 
+async def evolution_sweep(store, paper, evolver) -> dict:
+    """One evolution pass: resolve pending games -> settle -> review traded ones.
+    Shared by the periodic loop and the manual '立即进化' button."""
+    from . import gamma
+    out = {"resolved_now": [], "evolved": []}
+    resolved = store.resolved_slugs()
+    for slug in store.known_game_slugs():
+        if slug in resolved:
+            continue
+        res = await gamma.fetch_resolution(slug)
+        if not res or not res["resolved"]:
+            continue
+        ts = int(time.time())
+        for market, label, yes_t, no_t, winner in res["rows"]:
+            store.record_resolution(slug, market, label, yes_t, no_t, winner, ts)
+        paper.settle(slug, store.resolution_map(slug))
+        out["resolved_now"].append(slug)
+    # Review every resolved match we actually traded, once.
+    if evolver is not None:
+        for slug in store.resolved_slugs():
+            if slug in evolver._done or not store.trades_for_slug(slug):
+                continue
+            r = evolver.on_match_resolved(slug)
+            if r:
+                out["evolved"].append({"slug": slug, "changes": r["changes"], "adopted": r["adopted"]})
+    return out
+
+
 def load_learnings(limit: int = 100) -> list:
     """Return evolution review records (newest first) for the UI."""
     try:

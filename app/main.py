@@ -84,29 +84,14 @@ async def sampler_loop(state: AppState, store: Store) -> None:
 
 
 async def resolution_loop(state: AppState, store: Store, paper, evolver) -> None:
-    """Finished games: fetch outcomes -> settle paper positions at TRUE value -> evolve."""
+    """Finished games: fetch outcomes -> settle paper at TRUE value -> evolve (per-match)."""
+    from .evolve import evolution_sweep
     while True:
         await asyncio.sleep(config.RESOLUTION_INTERVAL)
         try:
-            resolved = store.resolved_slugs()
-            for slug in store.known_game_slugs():
-                if slug in resolved:
-                    continue
-                res = await gamma.fetch_resolution(slug)
-                if not res or not res["resolved"]:
-                    continue
-                ts = int(time.time())
-                for market, label, yes_t, no_t, winner in res["rows"]:
-                    store.record_resolution(slug, market, label, yes_t, no_t, winner, ts)
-                logger.info("Resolved %s (%d markets)", slug, len(res["rows"]))
-                # Settle held paper positions at the true 0/1 outcome (not stale bid).
-                paper.settle(slug, store.resolution_map(slug))
-                # Per-match self-evolution.
-                if evolver is not None:
-                    try:
-                        evolver.on_match_resolved(slug)
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("evolve failed for %s: %s", slug, exc)
+            out = await evolution_sweep(store, paper, evolver)
+            if out["resolved_now"] or out["evolved"]:
+                logger.info("evolution sweep: %s", out)
         except Exception as exc:  # noqa: BLE001
             logger.warning("resolution sweep failed: %s", exc)
 
@@ -146,7 +131,7 @@ async def run() -> None:
         resolution_loop(state, store, paper, evolver), name="resolution")
 
     # HTTP server.
-    app = build_app(state, broadcaster, paper, auto)
+    app = build_app(state, broadcaster, paper, auto, store, evolver)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, config.HOST, config.PORT)

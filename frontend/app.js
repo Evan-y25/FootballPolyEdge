@@ -90,6 +90,21 @@ async function fetchEvolution() {
     renderEvolution(await r.json());
   } catch (e) { /* ignore */ }
 }
+async function runEvolution() {
+  const btn = $("evo-run"), msg = $("evo-msg");
+  btn.disabled = true; btn.textContent = "进化中…"; msg.textContent = "";
+  try {
+    const r = await fetch("/api/evolution/run", { method: "POST" });
+    const d = await r.json();
+    msg.textContent = d.ok ? d.message : ("失败: " + (d.error || ""));
+    await fetchEvolution();
+  } catch (e) {
+    msg.textContent = "请求失败";
+  } finally {
+    btn.disabled = false; btn.textContent = "⚡ 立即进化";
+    setTimeout(() => { msg.textContent = ""; }, 8000);
+  }
+}
 function renderEvolution(d) {
   const g = d.current_genome || {};
   const adopted = (d.history || []).filter((h) => h.adopted).length;
@@ -579,6 +594,7 @@ $("params-editor").addEventListener("click", (ev) => {
   if (ev.target.id === "params-save") saveParams();
 });
 
+$("evo-run").addEventListener("click", runEvolution);
 $("evo-toggle").addEventListener("click", () => {
   const b = $("evo-body");
   const hidden = b.style.display === "none";

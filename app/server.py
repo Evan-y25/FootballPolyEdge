@@ -151,6 +151,18 @@ async def _api_evolution(request: web.Request) -> web.Response:
     })
 
 
+async def _api_evolution_run(request: web.Request) -> web.Response:
+    from . import evolve
+    evolver = request.app.get("evolver")
+    if evolver is None:
+        return web.json_response({"ok": False, "error": "进化未启用 (EVOLVE_ENABLED=0)"}, status=400)
+    out = await evolve.evolution_sweep(request.app["store"], request.app["paper"], evolver)
+    msg = f"结算 {len(out['resolved_now'])} 场，复盘 {len(out['evolved'])} 场"
+    if not out["resolved_now"] and not out["evolved"]:
+        msg = "暂无可进化的已结算比赛（需要：我们交易过 + 已结算的比赛）"
+    return web.json_response({"ok": True, "message": msg, **out})
+
+
 async def _api_auto_params(request: web.Request) -> web.Response:
     try:
         body = await request.json()
@@ -173,12 +185,14 @@ async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-def build_app(state: AppState, broadcaster: Broadcaster, paper, auto) -> web.Application:
+def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None, evolver=None) -> web.Application:
     app = web.Application()
     app["state"] = state
     app["broadcaster"] = broadcaster
     app["paper"] = paper
     app["auto"] = auto
+    app["store"] = store
+    app["evolver"] = evolver
     app.router.add_get("/", _index)
     app.router.add_get("/api/games", _api_games)
     app.router.add_get("/api/paper", _api_paper)
@@ -189,6 +203,7 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto) -> web.App
     app.router.add_post("/api/auto", _api_auto_set)
     app.router.add_post("/api/auto/params", _api_auto_params)
     app.router.add_get("/api/evolution", _api_evolution)
+    app.router.add_post("/api/evolution/run", _api_evolution_run)
     app.router.add_get("/ws", _ws_handler)
     app.router.add_get("/{name:[^/]+\\.(css|js)}", _static)
     return app
