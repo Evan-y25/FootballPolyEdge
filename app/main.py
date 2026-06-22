@@ -108,6 +108,7 @@ async def run() -> None:
     pathlib.Path(config.DATA_DIR).mkdir(parents=True, exist_ok=True)
     store = Store(config.DB_PATH)
     paper.store = store  # journal trades for replay
+    paper.journal_all()  # recover trade history into the store (survives restarts)
     evolver = Evolver(store, auto, autocommit=config.EVOLVE_AUTOCOMMIT) if config.EVOLVE_ENABLED else None
     logger.info("Store at %s | %s | evolve=%s autocommit=%s",
                 config.DB_PATH, store.stats(), config.EVOLVE_ENABLED, config.EVOLVE_AUTOCOMMIT)

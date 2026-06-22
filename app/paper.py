@@ -47,6 +47,11 @@ class PaperTrader:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("trade journal failed: %s", exc)
 
+    def journal_all(self) -> None:
+        """Re-journal all persisted positions to the store (recovers history across restarts)."""
+        for pos in self.positions:
+            self._journal(pos)
+
     def _param(self, key: str, default: float) -> float:
         if self.auto is not None:
             return self.auto.params.get(key, default)
