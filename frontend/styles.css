@@ -238,6 +238,9 @@ body {
 .side-yes { color: var(--green); font-weight: 700; }
 .side-no { color: var(--accent); font-weight: 700; }
 .added-tag { color: var(--gold); border: 1px solid var(--gold); border-radius: 4px; padding: 0 5px; font-size: 10px; }
+.evo-table code { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--accent); }
+.evo-table .evo-why div { line-height: 1.5; }
+#evo-summary code { background: var(--panel2); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 10px; color: var(--text); margin-right: 2px; }
 .sig-go { color: #161b22; background: var(--green); padding: 1px 7px; border-radius: 999px; font-weight: 700; }
 .sig-stop { color: #fff; background: var(--red); padding: 1px 7px; border-radius: 999px; font-weight: 700; }
 .sig-settle { color: #161b22; background: var(--accent); padding: 1px 7px; border-radius: 999px; font-weight: 700; }

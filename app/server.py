@@ -141,6 +141,16 @@ async def _api_auto_set(request: web.Request) -> web.Response:
     return web.json_response(request.app["auto"].set_enabled(bool(body.get("enabled", False))))
 
 
+async def _api_evolution(request: web.Request) -> web.Response:
+    from . import evolve, genome
+    auto = request.app["auto"]
+    return web.json_response({
+        "current_genome": auto.params,
+        "spec": {k: v[0] for k, v in genome.GENOME_SPEC.items()},
+        "history": evolve.load_learnings(100),
+    })
+
+
 async def _api_auto_params(request: web.Request) -> web.Response:
     try:
         body = await request.json()
@@ -178,6 +188,7 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto) -> web.App
     app.router.add_get("/api/auto", _api_auto)
     app.router.add_post("/api/auto", _api_auto_set)
     app.router.add_post("/api/auto/params", _api_auto_params)
+    app.router.add_get("/api/evolution", _api_evolution)
     app.router.add_get("/ws", _ws_handler)
     app.router.add_get("/{name:[^/]+\\.(css|js)}", _static)
     return app

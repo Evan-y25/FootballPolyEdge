@@ -75,6 +75,52 @@ function scoresHtml(slug, scores) {
   return `<div class="section-title">波胆 / Exact Score</div><div class="scores">${tiles}</div>`;
 }
 
+// ===== strategy evolution (策略进化) =====
+const GENOME_KEYS = ["direction", "stop_loss", "edge_threshold", "min_price",
+  "max_positions", "max_exposure", "bankroll", "hold_to_settle_price", "add_drop",
+  "stop_loss_enabled", "addon_enabled", "addon_pre_match_only"];
+function fmtChanges(ch) {
+  const e = Object.entries(ch || {});
+  if (!e.length) return '<span class="muted">无</span>';
+  return e.map(([k, v]) => `<code>${k}=${v}</code>`).join(" ");
+}
+async function fetchEvolution() {
+  try {
+    const r = await fetch("/api/evolution");
+    renderEvolution(await r.json());
+  } catch (e) { /* ignore */ }
+}
+function renderEvolution(d) {
+  const g = d.current_genome || {};
+  const adopted = (d.history || []).filter((h) => h.adopted).length;
+  $("evo-summary").innerHTML =
+    `当前基因: ` + GENOME_KEYS.map((k) => `<code>${k}=${g[k]}</code>`).join(" ") +
+    ` · 复盘 ${d.history.length} 场 · 采纳 ${adopted} 次`;
+  const body = $("evo-body");
+  if (!d.history.length) {
+    body.innerHTML = `<div class="muted ppad">暂无进化记录。每场比赛结算后会在这里出现一条复盘（含时间/原因/改动）。</div>`;
+    return;
+  }
+  const rows = d.history.map((h) => {
+    const t = new Date(h.ts * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const status = h.adopted
+      ? '<span class="sig-go">✅采纳</span>'
+      : '<span class="muted">仅分析</span>';
+    const attr = `止损砍赢单 ${h.premature_sl||0}·真亏 ${h.true_losses||0}·补仓亏 ${h.addon_losses||0}`;
+    return `<tr>
+      <td>${t}</td>
+      <td><code>${h.slug || ""}</code></td>
+      <td class="${pnlCls(h.pnl)}">${h.pnl>=0?'+':''}${h.pnl}</td>
+      <td>${fmtChanges(h.changes)}</td>
+      <td class="evo-why"><div>${(h.why||[]).join("；")}</div><div class="muted">${attr}</div></td>
+      <td>${status}</td>
+    </tr>`;
+  }).join("");
+  body.innerHTML = `<table class="ptable evo-table"><thead><tr>
+    <th>时间</th><th>比赛</th><th>当场盈亏</th><th>进化内容</th><th>原因 / 亏损归因</th><th>状态</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 // ===== paper trading (模拟盘) =====
 const SIGNAL_LABEL = {
   converged: ["sig-go", "建议平仓"],
@@ -533,7 +579,16 @@ $("params-editor").addEventListener("click", (ev) => {
   if (ev.target.id === "params-save") saveParams();
 });
 
+$("evo-toggle").addEventListener("click", () => {
+  const b = $("evo-body");
+  const hidden = b.style.display === "none";
+  b.style.display = hidden ? "" : "none";
+  $("evo-toggle").textContent = hidden ? "收起" : "展开";
+});
+
 connect();
 fetchPaper();
 fetchAuto();
+fetchEvolution();
 setInterval(() => { fetchPaper(); fetchAuto(); }, 2000);
+setInterval(fetchEvolution, 10000);

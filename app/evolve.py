@@ -38,6 +38,25 @@ MIN_TRADES = 3          # need at least this many closed trades to change anythi
 MAX_CHANGES = 2         # at most this many params changed per match
 
 
+def load_learnings(limit: int = 100) -> list:
+    """Return evolution review records (newest first) for the UI."""
+    try:
+        lines = LEARNINGS.read_text().splitlines()
+    except FileNotFoundError:
+        return []
+    out = []
+    for ln in lines[-limit:]:
+        ln = ln.strip()
+        if not ln:
+            continue
+        try:
+            out.append(json.loads(ln))
+        except json.JSONDecodeError:
+            continue
+    out.reverse()
+    return out
+
+
 class Evolver:
     def __init__(self, store, auto, autocommit: bool = False) -> None:
         self.store = store
