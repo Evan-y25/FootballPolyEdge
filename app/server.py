@@ -97,6 +97,58 @@ async def _api_games(request: web.Request) -> web.Response:
     return web.json_response(state.snapshot())
 
 
+async def _api_paper(request: web.Request) -> web.Response:
+    return web.json_response(request.app["paper"].snapshot())
+
+
+async def _api_paper_open(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"ok": False, "error": "无效请求体"}, status=400)
+    res = request.app["paper"].open(
+        slug=body.get("slug", ""),
+        market=body.get("market", "score"),
+        label=body.get("label", ""),
+        side=body.get("side", "yes"),
+        stake=float(body.get("stake", 0) or 0),
+    )
+    return web.json_response(res, status=200 if res.get("ok") else 400)
+
+
+async def _api_paper_close(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"ok": False, "error": "无效请求体"}, status=400)
+    res = request.app["paper"].close(int(body.get("id", 0)))
+    return web.json_response(res, status=200 if res.get("ok") else 400)
+
+
+async def _api_paper_reset(request: web.Request) -> web.Response:
+    return web.json_response(request.app["paper"].reset())
+
+
+async def _api_auto(request: web.Request) -> web.Response:
+    return web.json_response(request.app["auto"].status())
+
+
+async def _api_auto_set(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"error": "无效请求体"}, status=400)
+    return web.json_response(request.app["auto"].set_enabled(bool(body.get("enabled", False))))
+
+
+async def _api_auto_params(request: web.Request) -> web.Response:
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        return web.json_response({"error": "无效请求体"}, status=400)
+    return web.json_response(request.app["auto"].set_params(body or {}))
+
+
 async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
@@ -111,12 +163,21 @@ async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-def build_app(state: AppState, broadcaster: Broadcaster) -> web.Application:
+def build_app(state: AppState, broadcaster: Broadcaster, paper, auto) -> web.Application:
     app = web.Application()
     app["state"] = state
     app["broadcaster"] = broadcaster
+    app["paper"] = paper
+    app["auto"] = auto
     app.router.add_get("/", _index)
     app.router.add_get("/api/games", _api_games)
+    app.router.add_get("/api/paper", _api_paper)
+    app.router.add_post("/api/paper/open", _api_paper_open)
+    app.router.add_post("/api/paper/close", _api_paper_close)
+    app.router.add_post("/api/paper/reset", _api_paper_reset)
+    app.router.add_get("/api/auto", _api_auto)
+    app.router.add_post("/api/auto", _api_auto_set)
+    app.router.add_post("/api/auto/params", _api_auto_params)
     app.router.add_get("/ws", _ws_handler)
     app.router.add_get("/{name:[^/]+\\.(css|js)}", _static)
     return app

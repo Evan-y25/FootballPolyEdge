@@ -11,9 +11,13 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import pathlib
+
 from aiohttp import web
 
 from . import config, gamma
+from .autotrader import AutoTrader
+from .paper import PaperTrader
 from .server import Broadcaster, build_app
 from .state import AppState
 from .ws_client import MarketWebSocket
@@ -53,6 +57,10 @@ async def run() -> None:
     ws = MarketWebSocket()
     state = AppState(ws)
     broadcaster = Broadcaster(state)
+    paper_path = pathlib.Path(__file__).resolve().parent.parent / "paper_positions.json"
+    paper = PaperTrader(state, paper_path, config.PAPER_START_CASH)
+    auto = AutoTrader(state, paper)
+    paper.auto = auto  # let paper read live auto params for exit signals
 
     @ws.on_update
     def _on_token_update(token_id: str) -> None:
@@ -67,9 +75,10 @@ async def run() -> None:
     refresh_task = asyncio.create_task(
         refresh_loop(state, ws, broadcaster), name="refresh"
     )
+    auto_task = asyncio.create_task(auto.run(), name="autotrader")
 
     # HTTP server.
-    app = build_app(state, broadcaster)
+    app = build_app(state, broadcaster, paper, auto)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, config.HOST, config.PORT)
@@ -80,7 +89,7 @@ async def run() -> None:
         await asyncio.Event().wait()  # run forever
     finally:
         ws.stop()
-        for t in (ws_task, push_task, refresh_task):
+        for t in (ws_task, push_task, refresh_task, auto_task):
             t.cancel()
         await runner.cleanup()
 

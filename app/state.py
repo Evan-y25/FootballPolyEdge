@@ -235,3 +235,56 @@ class AppState:
             for t in g.all_tokens():
                 index[t] = g.slug
         return index
+
+    # ---- helpers for the paper trader -----------------------------------
+    def find_game(self, slug: str) -> Optional[Game]:
+        for g in self.games:
+            if g.slug == slug:
+                return g
+        return None
+
+    def find_outcome(self, game: Game, market: str, label: str) -> Optional[Outcome]:
+        if market == "1x2":
+            return {"home": game.home_win, "draw": game.draw, "away": game.away_win}.get(label)
+        for o in game.scores:
+            if o.label == label:
+                return o
+        return None
+
+    def token_best(self, token_id: str) -> dict:
+        """Best bid/ask (price + size) for a token; zeros if no book."""
+        ob = self.ws.get_orderbook(token_id)
+        if ob is None:
+            return {"bid": 0.0, "bid_size": 0.0, "ask": 0.0, "ask_size": 0.0, "live": False}
+        bid, bid_size = ob.best_bid_level()
+        ask, ask_size = ob.best_ask_level()
+        return {"bid": bid, "bid_size": bid_size, "ask": ask, "ask_size": ask_size, "live": True}
+
+    def fair_for(self, slug: str, market: str, label: str, side: str) -> Optional[float]:
+        """Current model fair value of the held token (side 'yes'/'no')."""
+        game = self.find_game(slug)
+        if not game:
+            return None
+        if market == "score":
+            sm = self._score_model(
+                self._quote(game.home_win),
+                self._quote(game.draw),
+                self._quote(game.away_win),
+                [q for q in (self._quote(o) for o in game.scores) if q],
+            )
+            if not sm:
+                return None
+            cell = sm["matrix"].get(label)
+            if not cell:
+                return None
+            p = cell["model"]
+        else:  # 1x2 — de-vig current mids
+            mids = [self._mid(self._quote(x)) for x in (game.home_win, game.draw, game.away_win)]
+            if min(mids) <= 0:
+                return None
+            probs = score_model.devig(mids, config.DEVIG_METHOD)
+            idx = {"home": 0, "draw": 1, "away": 2}.get(label)
+            if idx is None:
+                return None
+            p = probs[idx]
+        return p if side == "yes" else 1.0 - p

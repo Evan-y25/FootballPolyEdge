@@ -25,12 +25,30 @@
     <label><input type="checkbox" id="only-live" /> 仅进行中</label>
     <span class="sep">|</span>
     <label>本金 $<input type="number" id="bankroll" value="100" min="1" step="10" /></label>
-    <label>最低执行价 <input type="number" id="min-price" value="5" min="0" max="100" step="1" />¢</label>
+    <label title="只显示执行价≥该值的机会，偏向大概率事件">最低执行价 <input type="number" id="min-price" value="50" min="0" max="100" step="1" />¢</label>
     <label><input type="checkbox" id="exec-only" checked /> 价值表仅显示可成交</label>
     <span class="muted">¢=美分 · ask买/bid卖 · 闪动=刚更新 ·
       矩阵 Δ 配色：<span class="lg-buy">红=市场低估(买)</span> / <span class="lg-sell">蓝=市场高估(卖)</span> ·
       建议注=¼Kelly(单注≤本金20%，受盘口量限制)</span>
   </div>
+
+  <section id="paper" class="paper">
+    <div class="paper-head">
+      <span class="ptitle">🧪 模拟盘</span>
+      <span id="paper-summary" class="psum muted">加载中…</span>
+      <span class="spacer"></span>
+      <button id="auto-toggle" class="pbtn auto-off">自动交易：关</button>
+      <button id="params-toggle" class="pbtn ghost">⚙️参数</button>
+      <button id="paper-reset" class="pbtn ghost">清空</button>
+      <button id="paper-toggle" class="pbtn ghost">收起</button>
+    </div>
+    <div id="params-editor" class="params-editor" style="display:none"></div>
+    <div id="auto-bar" class="auto-bar"></div>
+    <div id="paper-body" class="paper-body">
+      <div id="paper-open"></div>
+      <div id="paper-closed"></div>
+    </div>
+  </section>
 
   <main id="games" class="games"></main>
 

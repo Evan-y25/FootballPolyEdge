@@ -6,3 +6,6 @@ venv/
 
 # Third-party reference project (has its own git history)
 ReferenceProject/
+
+# Paper-trading state
+paper_positions.json

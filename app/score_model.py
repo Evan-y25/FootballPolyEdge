@@ -229,12 +229,21 @@ def bucketize(
 # --------------------------------------------------------------------------
 # 5. compare + value edges
 # --------------------------------------------------------------------------
+def _spread_fields(price: float, bid) -> dict:
+    """Spread of the bought token: ask(=price) minus its own bid."""
+    if bid is None or bid <= 0 or price <= 0:
+        return {"bid": None, "spread": None, "spread_pct": None}
+    spread = max(0.0, price - bid)
+    return {"bid": round(bid, 4), "spread": round(spread, 4), "spread_pct": round(spread / price, 4)}
+
+
 def compare(
     model_buckets: Dict[str, float],
     market_buckets: Dict[str, float],
     yes_asks: Dict[str, float],
     yes_bids: Dict[str, float],
     no_asks: Dict[str, float],
+    no_bids: Dict[str, float],
     yes_ask_sizes: Dict[str, float],
     no_ask_sizes: Dict[str, float],
     threshold: float = 0.02,
@@ -272,6 +281,7 @@ def compare(
                         "edge": round(e_buy, 4),
                         "size": round(yes_ask_sizes.get(lbl, 0.0), 2),
                         "no_book": True,
+                        **_spread_fields(ay, yes_bids.get(lbl)),
                     }
                 )
         # --- buy NO (= sell YES; bet it does NOT happen) ---
@@ -295,6 +305,7 @@ def compare(
                         "edge": round(e_no, 4),
                         "size": round(size_no, 2),
                         "no_book": bool(no_book),
+                        **_spread_fields(an, no_bids.get(lbl) if no_book else None),
                     }
                 )
     edges.sort(key=lambda e: e["edge"], reverse=True)
@@ -337,6 +348,7 @@ def build_score_model(
     yes_asks = {q["label"]: q.get("ask") for q in score_quotes}
     yes_bids = {q["label"]: q.get("bid") for q in score_quotes}
     no_asks = {q["label"]: q.get("no_ask") for q in score_quotes}
+    no_bids = {q["label"]: q.get("no_bid") for q in score_quotes}
     yes_ask_sizes = {q["label"]: q.get("ask_size", 0.0) for q in score_quotes}
     no_ask_sizes = {q["label"]: q.get("no_ask_size", 0.0) for q in score_quotes}
 
@@ -346,6 +358,7 @@ def build_score_model(
         yes_asks,
         yes_bids,
         no_asks,
+        no_bids,
         yes_ask_sizes,
         no_ask_sizes,
         threshold,

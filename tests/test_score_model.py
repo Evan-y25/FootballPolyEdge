@@ -105,23 +105,42 @@ def test_compare_buy_no_uses_real_no_ask_and_proxy():
     _mx, edges = sm.compare(
         model, market,
         yes_asks={"0 - 0": 0.50}, yes_bids={"0 - 0": 0.05},
-        no_asks={"0 - 0": 0.70},
+        no_asks={"0 - 0": 0.70}, no_bids={"0 - 0": 0.68},
         yes_ask_sizes={"0 - 0": 0}, no_ask_sizes={"0 - 0": 500},
         threshold=0.02,
     )
     buy_no = [e for e in edges if e["side"] == "buy_no"][0]
     assert approx(buy_no["edge"], 0.10, tol=1e-9)
     assert buy_no["no_book"] is True and buy_no["size"] == 500
+    # spread = ask(0.70) - bid(0.68) = 0.02 -> spread_pct ~ 0.0286
+    assert approx(buy_no["spread"], 0.02, tol=1e-9)
+    assert approx(buy_no["spread_pct"], 0.02 / 0.70, tol=1e-3)
 
     # No NO ask -> proxy 1 - bid(YES) = 1 - 0.05 = 0.95, fair(NO)=0.80 -> edge -0.15 (no edge)
     _mx2, edges2 = sm.compare(
         model, market,
         yes_asks={"0 - 0": 0.50}, yes_bids={"0 - 0": 0.05},
-        no_asks={"0 - 0": 0.0},
+        no_asks={"0 - 0": 0.0}, no_bids={"0 - 0": 0.0},
         yes_ask_sizes={"0 - 0": 0}, no_ask_sizes={"0 - 0": 0},
         threshold=0.02,
     )
     assert not [e for e in edges2 if e["side"] == "buy_no"]
+
+
+def test_wide_spread_fields_present():
+    # buy_yes with a wide spread: ask 0.43, bid 0.23 -> spread_pct ~ 0.465
+    model = {"Other": 0.588}
+    market = {"Other": 0.40}
+    _mx, edges = sm.compare(
+        model, market,
+        yes_asks={"Other": 0.43}, yes_bids={"Other": 0.23},
+        no_asks={"Other": 0.0}, no_bids={"Other": 0.0},
+        yes_ask_sizes={"Other": 100}, no_ask_sizes={"Other": 0},
+        threshold=0.02,
+    )
+    buy_yes = [e for e in edges if e["side"] == "buy_yes"][0]
+    assert approx(buy_yes["spread"], 0.20, tol=1e-9)
+    assert buy_yes["spread_pct"] > 0.45  # would be filtered by AUTO_MAX_SPREAD=0.08
 
 
 if __name__ == "__main__":
