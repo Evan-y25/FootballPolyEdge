@@ -178,6 +178,9 @@ class Evolver:
             if r.returncode != 0 and "nothing to commit" not in (r.stdout + r.stderr):
                 logger.warning("git commit failed: %s", r.stderr[-300:])
                 return False
+            # Rebase onto remote first to avoid races with other pushers.
+            subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=str(REPO_DIR),
+                           capture_output=True, text=True, timeout=60)
             push = subprocess.run(["git", "push"], cwd=str(REPO_DIR),
                                   capture_output=True, text=True, timeout=60)
             if push.returncode != 0:
