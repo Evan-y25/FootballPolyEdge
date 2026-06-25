@@ -69,6 +69,24 @@ $("test").addEventListener("click", async () => {
   if (d.status) render(d.status);
 });
 
+$("testbuy").addEventListener("click", async () => {
+  if (!confirm("测试买入：用真实资金小额买入某场 1X2 三条 YES 腿（验证下单链路，非套利，net 成本≈抽水）。继续？")) return;
+  const btn = $("testbuy"); btn.disabled = true; btn.textContent = "买入中…";
+  $("msg").textContent = "";
+  try {
+    const d = await (await fetch("/api/live/testbuy", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })).json();
+    if (d.ok) {
+      const legs = (d.legs || []).map((l) => `${l.leg}:${l.status || l.error || "?"}`).join(" ");
+      $("msg").innerHTML = `<span class="${d.filled === 3 ? "ok" : "bad"}">${d.game} · ${d.filled}/3 成交 · ≈$${d.cost} · ${legs}</span>`;
+    } else {
+      $("msg").innerHTML = `<span class="bad">测试失败: ${d.error || ""}</span>`;
+    }
+    fetchLive();
+  } finally {
+    btn.disabled = false; btn.textContent = "🧪 测试买入(3腿)";
+  }
+});
+
 $("arm").addEventListener("click", async () => {
   if (!armed) {
     if (!confirm("确认武装实盘？武装后系统会用真实资金自动下单（受 $/腿 与总额上限约束）。")) return;

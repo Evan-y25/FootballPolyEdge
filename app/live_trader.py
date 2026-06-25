@@ -126,6 +126,61 @@ class LiveTrader:
             self._note("参数更新: " + ", ".join(f"{k}={v}" for k, v in applied.items()))
         return {"ok": True, "caps": {"per_leg": self.max_per_leg, "total": self.max_total, "min_edge": self.min_edge}}
 
+    # ---- manual test buy (real money, small) ----------------------------
+    def test_buy(self, slug: Optional[str] = None) -> dict:
+        """Place a REAL small 3-leg back buy (YES x3) on a chosen/any game to
+        validate the order path end-to-end. Not an arb — a 1X2 back held to
+        settlement returns ~$1/set, so the net cost is just the overround."""
+        if not self.enabled:
+            return {"ok": False, "error": "LIVE_ENABLED=0 (主闸关闭)"}
+        if not self.ready:
+            return {"ok": False, "error": self.error or "未就绪 (先测试连接)"}
+        game, quotes = None, None
+        for g in self.state.games:
+            if slug and g.slug != slug:
+                continue
+            if not (g.home_win and g.draw and g.away_win) or g.status() == "live":
+                continue
+            q = [self.state.token_best(o.yes_token) for o in (g.home_win, g.draw, g.away_win)]
+            if all(x["ask"] > 0 and x["ask_size"] > 0 for x in q):
+                game, quotes = g, q
+                break
+        if not game:
+            return {"ok": False, "error": "找不到可测试的市场(需三腿都有卖单+深度)"}
+        legs = [game.home_win, game.draw, game.away_win]
+        asks = [x["ask"] for x in quotes]
+        sizes = [x["ask_size"] for x in quotes]
+        pusd = (self.onchain or {}).get("pusd") or 0.0
+        per_leg = min(config.LIVE_TEST_PER_LEG, self.max_per_leg, pusd / 3 if pusd else 0)
+        n = float(int(min([per_leg / max(asks)] + list(sizes))))
+        if n < 1:
+            n = 1.0 if per_leg >= max(asks) else 0.0
+        if n < 1:
+            return {"ok": False, "error": f"测试额度买不起1股 (per_leg≈${per_leg:.2f}, 最贵腿{max(asks):.2f}, pUSD ${pusd:.2f})"}
+        neg = any(getattr(o, "neg_risk", False) for o in legs)
+        tokens = [o.yes_token for o in legs]
+        labels = ["home", "draw", "away"]
+        self._note(f"🧪 测试买入 {game.home} vs {game.away} 三腿YES N={n:.0f} (非套利,验证下单链路)", "warn")
+        import concurrent.futures
+        res = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+            futs = {ex.submit(self._place_fok, tokens[i], asks[i], n, neg): i for i in range(3)}
+            for fut in concurrent.futures.as_completed(futs):
+                res[futs[fut]] = fut.result()
+        filled = [i for i in range(3) if res[i].get("filled")]
+        cost = sum(n * asks[i] for i in filled)
+        self.deployed += cost
+        self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
+                             "away": game.away, "kind": "test", "shares": n,
+                             "legs": [{"leg": labels[i], "price": round(asks[i], 4), **res[i]} for i in range(3)],
+                             "filled_legs": len(filled), "cost": round(cost, 2),
+                             "complete": len(filled) == 3, "done": True})
+        self._note(f"🧪 测试结果: {len(filled)}/3 成交, 成本≈${cost:.2f}", "info")
+        self.refresh_balance()
+        return {"ok": True, "game": f"{game.home} vs {game.away}", "shares": n,
+                "filled": len(filled), "cost": round(cost, 2),
+                "legs": [{"leg": labels[i], **res[i]} for i in range(3)]}
+
     # ---- execution ------------------------------------------------------
     def scan_once(self) -> dict:
         if not (self.enabled and self.ready and self.armed):

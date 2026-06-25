@@ -197,6 +197,17 @@ async def _api_live_test(request: web.Request) -> web.Response:
     return web.json_response({"ok": live.ready, "status": live.status()})
 
 
+async def _api_live_testbuy(request: web.Request) -> web.Response:
+    live = request.app.get("live")
+    if live is None:
+        return web.json_response({"ok": False, "error": "未初始化"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    return web.json_response(live.test_buy(body.get("slug")))
+
+
 async def _api_live_config(request: web.Request) -> web.Response:
     live = request.app.get("live")
     if live is None:
@@ -324,6 +335,7 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app.router.add_post("/api/live/test", _api_live_test)
     app.router.add_post("/api/live/arm", _api_live_arm)
     app.router.add_post("/api/live/config", _api_live_config)
+    app.router.add_post("/api/live/testbuy", _api_live_testbuy)
     app.router.add_get("/replay", _replay_page)
     app.router.add_get("/api/replay/games", _api_replay_games)
     app.router.add_get("/api/replay", _api_replay)

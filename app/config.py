@@ -104,6 +104,7 @@ LIVE_MIN_EDGE = _float("LIVE_MIN_EDGE", 0.01)            # min arb edge to fire 
 LIVE_MAX_EDGE = _float("LIVE_MAX_EDGE", 0.10)            # edges above this = stale/thin artifact, reject
 LIVE_MAX_PER_GAME = _int("LIVE_MAX_PER_GAME", 1)
 LIVE_INTERVAL = _int("LIVE_INTERVAL", 3)
+LIVE_TEST_PER_LEG = _float("LIVE_TEST_PER_LEG", 1.0)    # USDC/leg for the manual test-buy
 
 # ---- 1X2 arbitrage executor (paper, separate book) ----
 ARB_ENABLED = os.environ.get("ARB_ENABLED", "0") in ("1", "true", "True")
