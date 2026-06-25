@@ -220,7 +220,7 @@ class Evolver:
                "Auto-evolved from per-match review (paper). "
                "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>")
         try:
-            subprocess.run(["git", "add", "genome.json", "memory"], cwd=str(REPO_DIR),
+            subprocess.run(["git", "add", "genome.json"], cwd=str(REPO_DIR),
                            check=True, capture_output=True, text=True, timeout=30)
             r = subprocess.run(["git", "commit", "-m", msg], cwd=str(REPO_DIR),
                                capture_output=True, text=True, timeout=30)

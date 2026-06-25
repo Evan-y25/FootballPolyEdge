@@ -12,3 +12,6 @@ paper_positions.json
 
 # SQLite replay store
 data/
+
+# Evolution runtime logs (shown in UI; not version-controlled)
+memory/
