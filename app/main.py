@@ -20,6 +20,7 @@ from . import config, gamma, genome
 from .arb_executor import ArbExecutor
 from .autotrader import AutoTrader
 from .evolve import Evolver
+from .live_trader import LiveTrader
 from .paper import PaperTrader
 from .server import Broadcaster, build_app
 from .state import AppState
@@ -123,6 +124,7 @@ async def run() -> None:
     arb_paper.journal_all()
     arb = ArbExecutor(state, arb_paper)
     arb.enabled = config.ARB_ENABLED
+    live = LiveTrader(state)
     logger.info("Store at %s | %s | evolve=%s autocommit=%s",
                 config.DB_PATH, store.stats(), config.EVOLVE_ENABLED, config.EVOLVE_AUTOCOMMIT)
 
@@ -144,9 +146,10 @@ async def run() -> None:
     resolution_task = asyncio.create_task(
         resolution_loop(state, store, paper, evolver, arb_paper), name="resolution")
     arb_task = asyncio.create_task(arb.run(), name="arb")
+    live_task = asyncio.create_task(live.run(), name="live")
 
     # HTTP server.
-    app = build_app(state, broadcaster, paper, auto, store, evolver, arb)
+    app = build_app(state, broadcaster, paper, auto, store, evolver, arb, live)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, config.HOST, config.PORT)
@@ -157,7 +160,7 @@ async def run() -> None:
         await asyncio.Event().wait()  # run forever
     finally:
         ws.stop()
-        for t in (ws_task, push_task, refresh_task, auto_task, sampler_task, resolution_task, arb_task):
+        for t in (ws_task, push_task, refresh_task, auto_task, sampler_task, resolution_task, arb_task, live_task):
             t.cancel()
         store.close()
         await runner.cleanup()

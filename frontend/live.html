@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>实盘 1X2 套利 · FootballPolyEdge</title>
+  <style>
+    :root{--bg:#0e1117;--panel:#161b22;--panel2:#1c2230;--border:#2a3140;--text:#e6edf3;--muted:#8b949e;--accent:#2f81f7;--green:#2ea043;--red:#e5534b;--gold:#d4a017;}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+    .topbar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border)}
+    .brand{font-weight:700} .brand a{color:var(--muted);text-decoration:none;font-weight:400;font-size:12px;margin-left:8px}
+    .warn-banner{background:rgba(229,83,75,.15);border:1px solid var(--red);color:#ffb3ad;margin:14px 20px;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.6}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;padding:0 20px}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px}
+    .card .k{font-size:11px;color:var(--muted)} .card .v{font-size:18px;font-weight:700;margin-top:4px;word-break:break-all}
+    .v.ok{color:var(--green)} .v.bad{color:var(--red)} .v.warn{color:var(--gold)}
+    .bar{display:flex;align-items:center;gap:12px;padding:14px 20px;flex-wrap:wrap}
+    button{border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;border:1px solid var(--border);background:var(--panel2);color:var(--text)}
+    #arm.off{border-color:var(--border);color:var(--muted)} #arm.on{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+    #test{border-color:var(--accent);color:var(--accent)}
+    table{width:calc(100% - 40px);margin:0 20px;border-collapse:collapse;font-size:12px}
+    th{color:var(--muted);text-align:left;font-weight:500;padding:4px 8px;border-bottom:1px solid var(--border)}
+    td{padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+    .ok{color:var(--green)} .bad{color:var(--red)} .muted{color:var(--muted)}
+    h3{padding:0 20px;margin:18px 0 6px;font-size:13px;color:var(--muted)}
+    .log{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;padding:6px 20px;max-height:240px;overflow:auto}
+    .log .warn{color:var(--gold)}
+  </style>
+</head>
+<body>
+  <div class="topbar"><div class="brand">💵 实盘 1X2 套利 <a href="/">← 实时盘口</a></div></div>
+  <div class="warn-banner">
+    ⚠️ <b>真实资金</b>。下单需同时满足：<b>LIVE_ENABLED=1</b>（环境）+ <b>已配置私钥</b> + <b>页面武装</b>。
+    私钥只在服务器内存用于签名，<b>绝不日志/返回/上传</b>。三腿非原子成交——若部分腿成交会留单边敞口（已用极小上限封顶）。
+  </div>
+  <div class="grid" id="cards"></div>
+  <div class="bar">
+    <button id="test">🔌 测试连接 / 刷新余额</button>
+    <button id="arm" class="off">未武装（点击武装）</button>
+    <span id="msg" class="muted"></span>
+  </div>
+  <h3>实盘套利篮子</h3>
+  <div id="baskets"></div>
+  <h3>日志</h3>
+  <div class="log" id="log"></div>
+  <script src="/live.js"></script>
+</body>
+</html>

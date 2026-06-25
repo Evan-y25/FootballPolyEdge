@@ -174,6 +174,40 @@ async def _api_replay(request: web.Request) -> web.Response:
     return web.json_response(data)
 
 
+async def _live_page(request: web.Request) -> web.Response:
+    return web.FileResponse(FRONTEND_DIR / "live.html")
+
+
+async def _api_live(request: web.Request) -> web.Response:
+    live = request.app.get("live")
+    if live is None:
+        return web.json_response({"enabled": False, "ready": False, "armed": False,
+                                  "error": "未初始化", "baskets": [], "log": []})
+    return web.json_response(live.status())
+
+
+async def _api_live_test(request: web.Request) -> web.Response:
+    live = request.app.get("live")
+    if live is None:
+        return web.json_response({"ok": False, "error": "未初始化"}, status=400)
+    if not live.ready:
+        live.init()  # try (re)connect + derive creds + balance
+    else:
+        live.refresh_balance()
+    return web.json_response({"ok": live.ready, "status": live.status()})
+
+
+async def _api_live_arm(request: web.Request) -> web.Response:
+    live = request.app.get("live")
+    if live is None:
+        return web.json_response({"ok": False, "error": "未初始化"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    return web.json_response(live.arm(bool(body.get("armed", False))))
+
+
 async def _drawarb_page(request: web.Request) -> web.Response:
     return web.FileResponse(FRONTEND_DIR / "drawarb.html")
 
@@ -250,7 +284,7 @@ async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None, evolver=None, arb=None) -> web.Application:
+def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None, evolver=None, arb=None, live=None) -> web.Application:
     app = web.Application()
     app["state"] = state
     app["broadcaster"] = broadcaster
@@ -259,6 +293,7 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app["store"] = store
     app["evolver"] = evolver
     app["arb"] = arb
+    app["live"] = live
     app.router.add_get("/", _index)
     app.router.add_get("/api/games", _api_games)
     app.router.add_get("/api/paper", _api_paper)
@@ -273,6 +308,10 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app.router.add_get("/api/arb", _api_arb)
     app.router.add_post("/api/arb", _api_arb_set)
     app.router.add_post("/api/arb/scan", _api_arb_scan)
+    app.router.add_get("/live", _live_page)
+    app.router.add_get("/api/live", _api_live)
+    app.router.add_post("/api/live/test", _api_live_test)
+    app.router.add_post("/api/live/arm", _api_live_arm)
     app.router.add_get("/replay", _replay_page)
     app.router.add_get("/api/replay/games", _api_replay_games)
     app.router.add_get("/api/replay", _api_replay)

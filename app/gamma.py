@@ -59,6 +59,7 @@ class Outcome:
     no_token: str
     init_yes: float = 0.0  # initial price (fallback before websocket data)
     init_no: float = 0.0
+    neg_risk: bool = False  # neg-risk market -> different exchange contract for orders
 
 
 @dataclass
@@ -225,6 +226,7 @@ def _build_1x2(event: Dict[str, Any]) -> Optional[Game]:
             no_token=no,
             init_yes=iy,
             init_no=ino,
+            neg_risk=bool(m.get("negRisk") or m.get("negRiskMarketID")),
         )
         if leg == "home":
             game.home_win = outcome
@@ -256,6 +258,7 @@ def _attach_scores(game: Game, event: Dict[str, Any]) -> None:
                 no_token=no,
                 init_yes=iy,
                 init_no=ino,
+                neg_risk=bool(m.get("negRisk") or m.get("negRiskMarketID")),
             )
         )
 

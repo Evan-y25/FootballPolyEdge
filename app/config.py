@@ -88,6 +88,23 @@ AUTO_MIN_STAKE = _float("AUTO_MIN_STAKE", 1.0)        # skip dust orders
 AUTO_MAX_SPREAD = _float("AUTO_MAX_SPREAD", 0.08)
 # After closing a position, don't re-open the same (slug,label,side) for N seconds.
 AUTO_REENTRY_COOLDOWN = _int("AUTO_REENTRY_COOLDOWN", 300)
+# ---- LIVE 1X2 arbitrage (REAL MONEY) ----
+# Master gate: real orders are only possible when this is 1 AND a key is set AND armed via UI.
+LIVE_ENABLED = os.environ.get("LIVE_ENABLED", "0") in ("1", "true", "True")
+CLOB_HOST = os.environ.get("CLOB_HOST", "https://clob.polymarket.com")
+POLY_PRIVATE_KEY = os.environ.get("POLY_PRIVATE_KEY", "")   # EOA key — NEVER logged/committed/exposed
+POLY_FUNDER = os.environ.get("POLY_FUNDER", "")             # Poly Proxy (Safe) address holding USDC
+POLY_SIGNATURE_TYPE = _int("POLY_SIGNATURE_TYPE", 2)
+# Optional builder attribution (builder program HMAC creds); leave blank to trade without.
+POLY_BUILDER_API_KEY = os.environ.get("POLY_BUILDER_API_KEY", "")
+POLY_BUILDER_SECRET = os.environ.get("POLY_BUILDER_SECRET", "")
+POLY_BUILDER_PASSPHRASE = os.environ.get("POLY_BUILDER_PASSPHRASE", "")
+LIVE_MAX_PER_LEG = _float("LIVE_MAX_PER_LEG", 5.0)         # max USDC per leg
+LIVE_MAX_TOTAL = _float("LIVE_MAX_TOTAL", 100.0)          # max cumulative USDC deployed live
+LIVE_MIN_EDGE = _float("LIVE_MIN_EDGE", 0.01)            # min arb edge to fire live (1%)
+LIVE_MAX_PER_GAME = _int("LIVE_MAX_PER_GAME", 1)
+LIVE_INTERVAL = _int("LIVE_INTERVAL", 3)
+
 # ---- 1X2 arbitrage executor (paper, separate book) ----
 ARB_ENABLED = os.environ.get("ARB_ENABLED", "0") in ("1", "true", "True")
 ARB_INTERVAL = _int("ARB_INTERVAL", 3)            # scan every N seconds

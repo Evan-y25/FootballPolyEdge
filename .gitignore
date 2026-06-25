@@ -15,3 +15,7 @@ data/
 
 # Evolution runtime logs (shown in UI; not version-controlled)
 memory/
+
+# Holds live env incl POLY_PRIVATE_KEY — never commit
+ecosystem.config.js
+.env
