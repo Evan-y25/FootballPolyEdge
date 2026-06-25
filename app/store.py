@@ -207,6 +207,44 @@ class Store:
                 "shares", "stake", "status", "added", "close_price", "realized_pnl", "close_reason"]
         return [dict(zip(cols, r)) for r in rows]
 
+    def replay_games(self) -> List[dict]:
+        """Games that have tick data, with meta + resolved flag (for the replay picker)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT t.slug, COUNT(*) c, MIN(t.ts), MAX(t.ts), g.home, g.away, g.kickoff, "
+                "(SELECT COUNT(*) FROM resolutions r WHERE r.slug=t.slug) res "
+                "FROM ticks t LEFT JOIN games g ON g.slug=t.slug "
+                "GROUP BY t.slug ORDER BY MAX(t.ts) DESC"
+            ).fetchall()
+        out = []
+        for slug, c, mn, mx, home, away, kickoff, res in rows:
+            out.append({"slug": slug, "ticks": c, "first_ts": mn, "last_ts": mx,
+                        "home": home, "away": away, "kickoff": kickoff, "resolved": bool(res)})
+        return out
+
+    def yes_ticks(self, slug: str) -> List[tuple]:
+        """All YES-side ticks (ts, market, label, mid) for a slug, ts-ordered."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ts, market, label, bid, ask FROM ticks "
+                "WHERE slug=? AND side='yes' ORDER BY ts", (slug,)
+            ).fetchall()
+        out = []
+        for ts, market, label, bid, ask in rows:
+            b, a = bid or 0.0, ask or 0.0
+            mid = (b + a) / 2 if (b or a) else 0.0
+            out.append((ts, market, label, mid))
+        return out
+
+    def game_meta(self, slug: str) -> Optional[dict]:
+        with self._lock:
+            r = self._conn.execute(
+                "SELECT home, away, kickoff FROM games WHERE slug=?", (slug,)
+            ).fetchone()
+        if not r:
+            return None
+        return {"home": r[0], "away": r[1], "kickoff": r[2]}
+
     def stats(self) -> dict:
         with self._lock:
             c = self._conn

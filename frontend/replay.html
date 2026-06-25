@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>盘口走势回放 · FootballPolyEdge</title>
+  <link rel="stylesheet" href="/uplot.min.css" />
+  <style>
+    :root{--bg:#0e1117;--panel:#161b22;--panel2:#1c2230;--border:#2a3140;--text:#e6edf3;--muted:#8b949e;--accent:#2f81f7;--green:#2ea043;--red:#e5534b;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+    .topbar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+    .brand{font-weight:700}
+    .brand a{color:var(--muted);text-decoration:none;font-weight:400;font-size:12px;margin-left:8px}
+    select,label{font-size:13px}
+    select{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;max-width:420px}
+    .toolbar{display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel)}
+    .muted{color:var(--muted)}
+    #info{padding:8px 20px;font-size:12px;color:var(--muted)}
+    #info b.res{color:var(--green)}
+    #chart{padding:12px 20px}
+    .legend-note{padding:0 20px 20px;font-size:12px;color:var(--muted);line-height:1.7}
+    .k-home{color:var(--red)} .k-away{color:var(--accent)} .k-ko{color:var(--green)}
+    .uplot{font-family:inherit}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">📈 盘口走势回放 <a href="/">← 返回实时盘口</a></div>
+    <select id="game"></select>
+  </div>
+  <div class="toolbar">
+    <label><input type="checkbox" id="show-1x2" checked /> 1X2 胜平负</label>
+    <label><input type="checkbox" id="show-scores" /> 波胆(17线)</label>
+    <span class="muted">竖线标注：<span class="k-ko">开赛</span> · <span class="k-home">疑似进球(主队方向)</span> / <span class="k-away">疑似进球(客队方向)</span> · Y轴=隐含概率%</span>
+  </div>
+  <div id="info">选择一场比赛…</div>
+  <div id="chart"></div>
+  <div class="legend-note">
+    说明：每条线是该结果的<b>隐含概率</b>（YES 盘口 mid）。进球会让 1X2 概率瞬间跳变——竖线是用主胜概率突跳<b>自动检测</b>的疑似进球时刻（仅供参考，非官方进球事件）。勾选「波胆」可叠加 17 个比分线，观察进球后比分盘如何重新分布。
+  </div>
+  <script src="/uplot.iife.min.js"></script>
+  <script src="/replay.js"></script>
+</body>
+</html>
