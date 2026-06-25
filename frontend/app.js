@@ -75,6 +75,58 @@ function scoresHtml(slug, scores) {
   return `<div class="section-title">波胆 / Exact Score</div><div class="scores">${tiles}</div>`;
 }
 
+// ===== 1X2 arbitrage executor =====
+let arbEnabled = false;
+async function fetchArb() {
+  try { renderArb(await (await fetch("/api/arb")).json()); } catch (e) {}
+}
+function renderArb(d) {
+  arbEnabled = d.enabled;
+  const btn = $("arb-toggle");
+  btn.textContent = "自动执行：" + (d.enabled ? "开" : "关");
+  btn.className = "pbtn " + (d.enabled ? "auto-on" : "auto-off");
+  const ac = d.account || {};
+  $("arb-summary").innerHTML = ac.start != null
+    ? `本金 $${ac.start} · 净值 <b>$${ac.equity}</b> · 已实现锁定 <b class="${pnlCls(ac.realized)}">${ac.realized>=0?'+':''}${ac.realized}</b> · 持有中 ${ac.open} 腿`
+    : "无数据";
+  const bs = d.baskets || [];
+  const body = $("arb-body");
+  if (!bs.length) {
+    body.innerHTML = `<div class="muted ppad">暂无套利篮子。开启「自动执行」或点「立即扫描」——发现 1X2 三腿和&lt;1(正套) 或 三腿NO和&lt;2(反套) 时锁定。</div>`;
+    return;
+  }
+  const rows = bs.map((b) => {
+    const st = b.settled
+      ? `<span class="${pnlCls(b.realized)}">已结算 ${b.realized>=0?'+':''}${b.realized}</span>`
+      : '<span class="sig-settle">持有至结算</span>';
+    const t = new Date(b.ts * 1000).toLocaleString("zh-CN", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
+    return `<tr><td>${t}</td><td>${b.home} vs ${b.away}</td>
+      <td>${b.kind === "back" ? "正套(买YES×3)" : "反套(买NO×3)"}</td>
+      <td>+${(b.edge*100).toFixed(2)}%</td><td>$${b.cost}</td>
+      <td class="ev">+$${b.profit}</td><td>${st}</td></tr>`;
+  }).join("");
+  body.innerHTML = `<table class="ptable"><thead><tr>
+    <th>时间</th><th>比赛</th><th>方向</th><th>edge</th><th>投入</th><th>锁定利润</th><th>状态</th>
+    </tr></thead><tbody>${rows}</tbody></table>`;
+}
+async function toggleArb() {
+  const d = await (await fetch("/api/arb", { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ enabled: !arbEnabled }) })).json();
+  renderArb(d);
+}
+async function scanArb() {
+  const btn = $("arb-scan"), msg = $("arb-msg");
+  btn.disabled = true; btn.textContent = "扫描中…";
+  try {
+    const d = await (await fetch("/api/arb/scan", { method:"POST" })).json();
+    msg.textContent = d.ok ? `本次新建 ${d.opened} 个套利篮子` : "失败";
+    if (d.status) renderArb(d.status);
+  } finally {
+    btn.disabled = false; btn.textContent = "⚡ 立即扫描";
+    setTimeout(() => { msg.textContent = ""; }, 6000);
+  }
+}
+
 // ===== strategy evolution (策略进化) =====
 const GENOME_KEYS = ["direction", "stop_loss", "edge_threshold", "min_price",
   "max_positions", "max_exposure", "bankroll", "hold_to_settle_price", "add_drop",
@@ -602,9 +654,19 @@ $("evo-toggle").addEventListener("click", () => {
   $("evo-toggle").textContent = hidden ? "收起" : "展开";
 });
 
+$("arb-toggle").addEventListener("click", toggleArb);
+$("arb-scan").addEventListener("click", scanArb);
+$("arb-collapse").addEventListener("click", () => {
+  const b = $("arb-body");
+  const hidden = b.style.display === "none";
+  b.style.display = hidden ? "" : "none";
+  $("arb-collapse").textContent = hidden ? "收起" : "展开";
+});
+
 connect();
 fetchPaper();
 fetchAuto();
 fetchEvolution();
+fetchArb();
 setInterval(() => { fetchPaper(); fetchAuto(); }, 2000);
-setInterval(fetchEvolution, 10000);
+setInterval(() => { fetchEvolution(); fetchArb(); }, 10000);

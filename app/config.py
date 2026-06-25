@@ -88,6 +88,15 @@ AUTO_MIN_STAKE = _float("AUTO_MIN_STAKE", 1.0)        # skip dust orders
 AUTO_MAX_SPREAD = _float("AUTO_MAX_SPREAD", 0.08)
 # After closing a position, don't re-open the same (slug,label,side) for N seconds.
 AUTO_REENTRY_COOLDOWN = _int("AUTO_REENTRY_COOLDOWN", 300)
+# ---- 1X2 arbitrage executor (paper, separate book) ----
+ARB_ENABLED = os.environ.get("ARB_ENABLED", "0") in ("1", "true", "True")
+ARB_INTERVAL = _int("ARB_INTERVAL", 3)            # scan every N seconds
+ARB_MIN_EDGE = _float("ARB_MIN_EDGE", 0.005)      # min profit/set as fraction (0.5%)
+ARB_MIN_PROFIT = _float("ARB_MIN_PROFIT", 1.0)    # skip baskets locking < $1
+ARB_MAX_STAKE = _float("ARB_MAX_STAKE", 200.0)    # max capital per arb basket
+ARB_MAX_EXPOSURE = _float("ARB_MAX_EXPOSURE", 0.9)
+ARB_BANKROLL = _float("ARB_BANKROLL", 2000.0)
+
 # Hybrid exit: a "buy NO" position entered at >= this price is a high-probability
 # longshot-fade whose payoff is realized at settlement -> HOLD to settlement
 # (no convergence/take-profit/pre-kickoff exit; only stop-loss + settlement).

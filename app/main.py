@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from aiohttp import web
 
 from . import config, gamma, genome
+from .arb_executor import ArbExecutor
 from .autotrader import AutoTrader
 from .evolve import Evolver
 from .paper import PaperTrader
@@ -83,13 +84,20 @@ async def sampler_loop(state: AppState, store: Store) -> None:
             logger.warning("sampler failed: %s", exc)
 
 
-async def resolution_loop(state: AppState, store: Store, paper, evolver) -> None:
-    """Finished games: fetch outcomes -> settle paper at TRUE value -> evolve (per-match)."""
+async def resolution_loop(state: AppState, store: Store, paper, evolver, arb_paper) -> None:
+    """Finished games: fetch outcomes -> settle both paper books -> evolve (per-match)."""
     from .evolve import evolution_sweep
     while True:
         await asyncio.sleep(config.RESOLUTION_INTERVAL)
         try:
             out = await evolution_sweep(store, paper, evolver)
+            # settle the arb book at true outcome too
+            for slug in out["resolved_now"]:
+                arb_paper.settle(slug, store.resolution_map(slug))
+            # also settle any arb book slugs already resolved but not yet settled
+            for slug in store.resolved_slugs():
+                if any(p["status"] == "open" and p["slug"] == slug for p in arb_paper.positions):
+                    arb_paper.settle(slug, store.resolution_map(slug))
             if out["resolved_now"] or out["evolved"]:
                 logger.info("evolution sweep: %s", out)
         except Exception as exc:  # noqa: BLE001
@@ -110,6 +118,11 @@ async def run() -> None:
     paper.store = store  # journal trades for replay
     paper.journal_all()  # recover trade history into the store (survives restarts)
     evolver = Evolver(store, auto, autocommit=config.EVOLVE_AUTOCOMMIT) if config.EVOLVE_ENABLED else None
+    arb_paper = PaperTrader(state, pathlib.Path(config.DATA_DIR) / "arb_positions.json", config.ARB_BANKROLL)
+    arb_paper.store = store
+    arb_paper.journal_all()
+    arb = ArbExecutor(state, arb_paper)
+    arb.enabled = config.ARB_ENABLED
     logger.info("Store at %s | %s | evolve=%s autocommit=%s",
                 config.DB_PATH, store.stats(), config.EVOLVE_ENABLED, config.EVOLVE_AUTOCOMMIT)
 
@@ -129,10 +142,11 @@ async def run() -> None:
     auto_task = asyncio.create_task(auto.run(), name="autotrader")
     sampler_task = asyncio.create_task(sampler_loop(state, store), name="sampler")
     resolution_task = asyncio.create_task(
-        resolution_loop(state, store, paper, evolver), name="resolution")
+        resolution_loop(state, store, paper, evolver, arb_paper), name="resolution")
+    arb_task = asyncio.create_task(arb.run(), name="arb")
 
     # HTTP server.
-    app = build_app(state, broadcaster, paper, auto, store, evolver)
+    app = build_app(state, broadcaster, paper, auto, store, evolver, arb)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, config.HOST, config.PORT)
@@ -143,7 +157,7 @@ async def run() -> None:
         await asyncio.Event().wait()  # run forever
     finally:
         ws.stop()
-        for t in (ws_task, push_task, refresh_task, auto_task, sampler_task, resolution_task):
+        for t in (ws_task, push_task, refresh_task, auto_task, sampler_task, resolution_task, arb_task):
             t.cancel()
         store.close()
         await runner.cleanup()

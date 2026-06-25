@@ -174,6 +174,32 @@ async def _api_replay(request: web.Request) -> web.Response:
     return web.json_response(data)
 
 
+async def _api_arb(request: web.Request) -> web.Response:
+    arb = request.app.get("arb")
+    if arb is None:
+        return web.json_response({"enabled": False, "baskets": [], "log": []})
+    return web.json_response(arb.status())
+
+
+async def _api_arb_set(request: web.Request) -> web.Response:
+    arb = request.app.get("arb")
+    if arb is None:
+        return web.json_response({"error": "arb 未初始化"}, status=400)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    return web.json_response(arb.set_enabled(bool(body.get("enabled", False))))
+
+
+async def _api_arb_scan(request: web.Request) -> web.Response:
+    arb = request.app.get("arb")
+    if arb is None:
+        return web.json_response({"error": "arb 未初始化"}, status=400)
+    res = arb.scan_once()
+    return web.json_response({"ok": True, **res, "status": arb.status()})
+
+
 async def _api_evolution_run(request: web.Request) -> web.Response:
     from . import evolve
     evolver = request.app.get("evolver")
@@ -208,7 +234,7 @@ async def _ws_handler(request: web.Request) -> web.WebSocketResponse:
     return ws
 
 
-def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None, evolver=None) -> web.Application:
+def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None, evolver=None, arb=None) -> web.Application:
     app = web.Application()
     app["state"] = state
     app["broadcaster"] = broadcaster
@@ -216,6 +242,7 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app["auto"] = auto
     app["store"] = store
     app["evolver"] = evolver
+    app["arb"] = arb
     app.router.add_get("/", _index)
     app.router.add_get("/api/games", _api_games)
     app.router.add_get("/api/paper", _api_paper)
@@ -227,6 +254,9 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app.router.add_post("/api/auto/params", _api_auto_params)
     app.router.add_get("/api/evolution", _api_evolution)
     app.router.add_post("/api/evolution/run", _api_evolution_run)
+    app.router.add_get("/api/arb", _api_arb)
+    app.router.add_post("/api/arb", _api_arb_set)
+    app.router.add_post("/api/arb/scan", _api_arb_scan)
     app.router.add_get("/replay", _replay_page)
     app.router.add_get("/api/replay/games", _api_replay_games)
     app.router.add_get("/api/replay", _api_replay)
