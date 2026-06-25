@@ -107,5 +107,24 @@ $("save-cfg").addEventListener("click", async () => {
   fetchLive();
 });
 
+$("copy-log").addEventListener("click", async () => {
+  const text = $("log").innerText || "";
+  try {
+    await navigator.clipboard.writeText(text);
+    $("copy-msg").textContent = "已复制 ✓";
+  } catch (e) {
+    // fallback: select the log text for manual copy
+    const r = document.createRange(); r.selectNodeContents($("log"));
+    const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    $("copy-msg").textContent = "已选中，按 Cmd/Ctrl+C 复制";
+  }
+  setTimeout(() => { $("copy-msg").textContent = ""; }, 3000);
+});
+
+function hasSelection() {
+  const s = window.getSelection && window.getSelection();
+  return !!(s && String(s).length > 0);
+}
 fetchLive();
-setInterval(fetchLive, 3000);
+// don't re-render while the user is selecting/copying text (it would clear the selection)
+setInterval(() => { if (!hasSelection()) fetchLive(); }, 3000);

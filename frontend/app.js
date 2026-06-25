@@ -668,5 +668,9 @@ fetchPaper();
 fetchAuto();
 fetchEvolution();
 fetchArb();
-setInterval(() => { fetchPaper(); fetchAuto(); }, 2000);
-setInterval(() => { fetchEvolution(); fetchArb(); }, 10000);
+function hasSelection() {
+  const s = window.getSelection && window.getSelection();
+  return !!(s && String(s).length > 0);
+}
+setInterval(() => { if (!hasSelection()) { fetchPaper(); fetchAuto(); } }, 2000);
+setInterval(() => { if (!hasSelection()) { fetchEvolution(); fetchArb(); } }, 10000);
