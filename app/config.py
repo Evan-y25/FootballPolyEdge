@@ -95,10 +95,9 @@ CLOB_HOST = os.environ.get("CLOB_HOST", "https://clob.polymarket.com")
 POLY_PRIVATE_KEY = os.environ.get("POLY_PRIVATE_KEY", "")   # EOA key — NEVER logged/committed/exposed
 POLY_FUNDER = os.environ.get("POLY_FUNDER", "")             # Poly Proxy (Safe) address holding USDC
 POLY_SIGNATURE_TYPE = _int("POLY_SIGNATURE_TYPE", 2)
-# Optional builder attribution (builder program HMAC creds); leave blank to trade without.
-POLY_BUILDER_API_KEY = os.environ.get("POLY_BUILDER_API_KEY", "")
-POLY_BUILDER_SECRET = os.environ.get("POLY_BUILDER_SECRET", "")
-POLY_BUILDER_PASSPHRASE = os.environ.get("POLY_BUILDER_PASSPHRASE", "")
+# CLOB V2 builder attribution: a bytes32 hex stamped into each order's `builder` field.
+# Optional — leave blank to trade without attribution.
+POLY_BUILDER_CODE = os.environ.get("POLY_BUILDER_CODE", "")
 LIVE_MAX_PER_LEG = _float("LIVE_MAX_PER_LEG", 5.0)         # max USDC per leg
 LIVE_MAX_TOTAL = _float("LIVE_MAX_TOTAL", 100.0)          # max cumulative USDC deployed live
 LIVE_MIN_EDGE = _float("LIVE_MIN_EDGE", 0.01)            # min arb edge to fire live (1%)

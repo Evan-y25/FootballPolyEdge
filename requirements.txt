@@ -1,4 +1,7 @@
 aiohttp>=3.9.0
 websockets>=12.0
-# Live trading (real money) — only needed when LIVE_ENABLED=1
-py-clob-client>=0.17.0
+# Live trading (real money, CLOB V2) — only needed when LIVE_ENABLED=1
+eth-account>=0.13.0
+eth-utils>=2.0.0
+requests>=2.28.0
+web3>=6.0.0

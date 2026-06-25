@@ -7,15 +7,21 @@ function card(k, v, cls = "") { return `<div class="card"><div class="k">${k}</d
 function render(d) {
   armed = d.armed;
   const gate = d.enabled ? (d.ready ? (d.armed ? ["⚔️ 已武装", "bad"] : ["就绪·未武装", "warn"]) : ["未就绪", "bad"]) : ["LIVE_ENABLED=0", "muted"];
+  const allowTxt = (v) => v === true ? "已授权✓" : v === false ? "未授权✗" : "—";
+  const allowCls = (v) => v === true ? "ok" : v === false ? "bad" : "";
   $("cards").innerHTML =
     card("主闸 LIVE_ENABLED", d.enabled ? "ON" : "OFF", d.enabled ? "ok" : "bad") +
     card("连接状态", gate[0], gate[1]) +
     card("签名地址(EOA)", d.address || "—") +
     card("Funder (Safe)", d.funder || "—") +
-    card("USDC 余额", d.usdc != null ? "$" + d.usdc : "—", d.usdc ? "ok" : "") +
+    card("pUSD 余额", d.pusd != null ? "$" + d.pusd : "—", d.pusd ? "ok" : "bad") +
+    card("授权 V2交易所", allowTxt(d.allow_exchange), allowCls(d.allow_exchange)) +
+    card("授权 Neg-Risk交易所", allowTxt(d.allow_negrisk), allowCls(d.allow_negrisk)) +
+    card("builder code", d.builder ? "有" : "无") +
     card("已投入(累计)", "$" + (d.deployed || 0), "") +
     card("上限/腿 · 总", d.caps ? `$${d.caps.per_leg} · $${d.caps.total}` : "—") +
     card("最低edge", d.caps ? (d.caps.min_edge * 100).toFixed(1) + "%" : "—");
+  if (d.onchain_error) $("msg").innerHTML = `<span class="bad">链上查询: ${d.onchain_error}</span>`;
   if (d.error) $("msg").innerHTML = `<span class="bad">${d.error}</span>`;
   const ab = $("arm");
   ab.className = d.armed ? "on" : "off";

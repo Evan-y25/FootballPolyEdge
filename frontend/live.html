@@ -30,8 +30,9 @@
 <body>
   <div class="topbar"><div class="brand">💵 实盘 1X2 套利 <a href="/">← 实时盘口</a></div></div>
   <div class="warn-banner">
-    ⚠️ <b>真实资金</b>。下单需同时满足：<b>LIVE_ENABLED=1</b>（环境）+ <b>已配置私钥</b> + <b>页面武装</b>。
-    私钥只在服务器内存用于签名，<b>绝不日志/返回/上传</b>。三腿非原子成交——若部分腿成交会留单边敞口（已用极小上限封顶）。
+    ⚠️ <b>真实资金 · CLOB V2(0xE111) · 抵押品 pUSD</b>。下单需同时满足：<b>LIVE_ENABLED=1</b> + <b>已配置私钥</b> + <b>页面武装</b>，
+    且 funder Safe 须<b>持有 pUSD</b> 并<b>已授权 V2 交易所</b>（否则下单失败）。
+    私钥只在服务器内存用于签名，<b>绝不日志/返回/上传</b>。三腿非原子成交——部分腿成交会留单边敞口（已用 $5/腿 极小上限封顶）。
   </div>
   <div class="grid" id="cards"></div>
   <div class="bar">
