@@ -22,6 +22,13 @@ function render(d) {
     card("上限/腿 · 总", d.caps ? `$${d.caps.per_leg} · $${d.caps.total}` : "—") +
     card("最低edge", d.caps ? (d.caps.min_edge * 100).toFixed(1) + "%" : "—");
   if (d.onchain_error) $("msg").innerHTML = `<span class="bad">链上查询: ${d.onchain_error}</span>`;
+  // seed sizing inputs (only when not focused, so typing isn't overwritten)
+  if (d.caps) {
+    const set = (id, v) => { const e = $(id); if (e && document.activeElement !== e) e.value = v; };
+    set("cfg-leg", d.caps.per_leg);
+    set("cfg-total", d.caps.total);
+    set("cfg-edge", (d.caps.min_edge * 100).toFixed(1));
+  }
   if (d.error) $("msg").innerHTML = `<span class="bad">${d.error}</span>`;
   const ab = $("arm");
   ab.className = d.armed ? "on" : "off";
@@ -62,6 +69,17 @@ $("arm").addEventListener("click", async () => {
   }
   const d = await (await fetch("/api/live/arm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ armed: !armed }) })).json();
   if (!d.ok) $("msg").innerHTML = `<span class="bad">${d.error}</span>`;
+  fetchLive();
+});
+
+$("save-cfg").addEventListener("click", async () => {
+  const body = {
+    max_per_leg: parseFloat($("cfg-leg").value),
+    max_total: parseFloat($("cfg-total").value),
+    min_edge: parseFloat($("cfg-edge").value) / 100,
+  };
+  const d = await (await fetch("/api/live/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
+  $("msg").innerHTML = d.ok ? `<span class="ok">已保存: 单腿$${d.caps.per_leg} 总$${d.caps.total} edge${(d.caps.min_edge*100).toFixed(1)}%</span>` : `<span class="bad">${d.error||"失败"}</span>`;
   fetchLive();
 });
 

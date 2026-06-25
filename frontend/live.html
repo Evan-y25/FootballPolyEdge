@@ -36,7 +36,12 @@
   </div>
   <div class="grid" id="cards"></div>
   <div class="bar">
-    <button id="test">🔌 测试连接 / 刷新余额</button>
+    <label>单腿上限 $<input type="number" id="cfg-leg" min="1" step="1" style="width:70px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px"/></label>
+    <label>总上限 $<input type="number" id="cfg-total" min="1" step="10" style="width:80px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px"/></label>
+    <label>最低edge %<input type="number" id="cfg-edge" min="0" step="0.1" style="width:70px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px"/></label>
+    <button id="save-cfg">保存参数</button>
+    <span style="flex:1"></span>
+    <button id="test">🔌 测试连接</button>
     <button id="arm" class="off">未武装（点击武装）</button>
     <span id="msg" class="muted"></span>
   </div>

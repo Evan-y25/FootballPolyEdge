@@ -37,6 +37,10 @@ class LiveTrader:
         self.error: Optional[str] = None
         self.address: Optional[str] = None
         self.funder: Optional[str] = config.POLY_FUNDER or None
+        # runtime-editable trade sizing (seeded from env defaults)
+        self.max_per_leg = config.LIVE_MAX_PER_LEG
+        self.max_total = config.LIVE_MAX_TOTAL
+        self.min_edge = config.LIVE_MIN_EDGE
         self.onchain: dict = {}
         self.deployed = 0.0
         self.baskets: List[dict] = []
@@ -97,6 +101,31 @@ class LiveTrader:
         self._note("⚔️ 已武装(真实下单已启用)" if self.armed else "已解除武装", "warn")
         return {"ok": True, "armed": self.armed}
 
+    def set_config(self, updates: dict) -> dict:
+        """Runtime-adjust trade sizing. Returns the applied caps."""
+        applied = {}
+        if "max_per_leg" in updates:
+            try:
+                self.max_per_leg = max(1.0, min(10000.0, float(updates["max_per_leg"])))
+                applied["max_per_leg"] = self.max_per_leg
+            except (TypeError, ValueError):
+                pass
+        if "max_total" in updates:
+            try:
+                self.max_total = max(1.0, min(1_000_000.0, float(updates["max_total"])))
+                applied["max_total"] = self.max_total
+            except (TypeError, ValueError):
+                pass
+        if "min_edge" in updates:
+            try:
+                self.min_edge = max(0.0, min(0.5, float(updates["min_edge"])))
+                applied["min_edge"] = self.min_edge
+            except (TypeError, ValueError):
+                pass
+        if applied:
+            self._note("参数更新: " + ", ".join(f"{k}={v}" for k, v in applied.items()))
+        return {"ok": True, "caps": {"per_leg": self.max_per_leg, "total": self.max_total, "min_edge": self.min_edge}}
+
     # ---- execution ------------------------------------------------------
     def scan_once(self) -> dict:
         if not (self.enabled and self.ready and self.armed):
@@ -110,22 +139,22 @@ class LiveTrader:
             if (g.slug, "back") not in held:
                 q = [self.state.token_best(o.yes_token) for o in legs]
                 asks = [x["ask"] for x in q]
-                if all(a > 0 for a in asks) and sum(asks) < 1 - config.LIVE_MIN_EDGE:
+                if all(a > 0 for a in asks) and sum(asks) < 1 - self.min_edge:
                     opened += self._execute(g, "back", legs, "yes", asks, [x["ask_size"] for x in q])
             if (g.slug, "lay") not in held:
                 q = [self.state.token_best(o.no_token) for o in legs]
                 asks = [x["ask"] for x in q]
-                if all(a > 0 for a in asks) and sum(asks) < 2 - config.LIVE_MIN_EDGE:
+                if all(a > 0 for a in asks) and sum(asks) < 2 - self.min_edge:
                     opened += self._execute(g, "lay", legs, "no", asks, [x["ask_size"] for x in q])
         return {"opened": opened}
 
     def _execute(self, game, kind, legs, side, prices, sizes) -> int:
-        if self.deployed >= config.LIVE_MAX_TOTAL:
+        if self.deployed >= self.max_total:
             return 0
         # available capital = min(total cap remaining, actual pUSD balance)
         pusd = (self.onchain or {}).get("pusd") or 0.0
-        available = min(config.LIVE_MAX_TOTAL - self.deployed, pusd)
-        per_leg = min(config.LIVE_MAX_PER_LEG, available / 3)
+        available = min(self.max_total - self.deployed, pusd)
+        per_leg = min(self.max_per_leg, available / 3)
         if per_leg < 1:
             self._note(f"{game.home} [{kind}] 跳过: 可用资金不足(pUSD≈${pusd:.2f})", "warn")
             return 0
@@ -183,8 +212,8 @@ class LiveTrader:
             "allow_exchange": oc.get("allow_exchange"), "allow_negrisk": oc.get("allow_negrisk"),
             "onchain_error": oc.get("error"),
             "deployed": round(self.deployed, 2),
-            "caps": {"per_leg": config.LIVE_MAX_PER_LEG, "total": config.LIVE_MAX_TOTAL,
-                     "min_edge": config.LIVE_MIN_EDGE},
+            "caps": {"per_leg": self.max_per_leg, "total": self.max_total,
+                     "min_edge": self.min_edge},
             "builder": bool(config.POLY_BUILDER_CODE),
             "baskets": list(reversed(self.baskets[-40:])),
             "log": list(self.log),
