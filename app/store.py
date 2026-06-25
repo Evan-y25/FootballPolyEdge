@@ -237,10 +237,10 @@ class Store:
         return out
 
     def yes_quotes(self, slug: str) -> List[tuple]:
-        """All YES-side ticks (ts, market, label, bid, ask) for a slug, ts-ordered."""
+        """All YES-side ticks (ts, market, label, bid, ask, bid_size, ask_size), ts-ordered."""
         with self._lock:
             return self._conn.execute(
-                "SELECT ts, market, label, bid, ask FROM ticks "
+                "SELECT ts, market, label, bid, ask, bid_size, ask_size FROM ticks "
                 "WHERE slug=? AND side='yes' ORDER BY ts", (slug,)
             ).fetchall()
 

@@ -36,34 +36,50 @@ function zeroPlugin() {
 }
 
 function computeSignal(d) {
-  const n = d.x.length, sig = new Array(n), synth = new Array(n);
+  const n = d.x.length;
+  const sig = new Array(n), synth = new Array(n), cap = new Array(n), usd = new Array(n);
   for (let i = 0; i < n; i++) {
-    const da = d.draw_ask[i];
-    if (da == null) { sig[i] = null; synth[i] = null; continue; }
-    let s = 0, any = false;
+    const da = d.draw_ask[i], daSz = d.draw_ask_size ? d.draw_ask_size[i] : null;
+    if (da == null) { sig[i] = synth[i] = cap[i] = usd[i] = null; continue; }
+    let s = 0, any = false, minSz = (daSz != null ? daSz : 0);
     for (const lab of selected) {
       const v = d.scores[lab] ? d.scores[lab][i] : null;
-      if (v != null) { s += v; any = true; }
+      const vs = d.scores_size && d.scores_size[lab] ? d.scores_size[lab][i] : null;
+      if (v != null) { s += v; any = true; minSz = Math.min(minSz, vs != null ? vs : 0); }
     }
     synth[i] = any ? s : null;
     sig[i] = any ? (s - da) : null;
+    cap[i] = any ? minSz : null;                       // executable shares (thinnest leg)
+    usd[i] = (any && sig[i] > 0) ? sig[i] * minSz : 0;  // executable $ when arb live
   }
-  return { sig, synth };
+  return { sig, synth, cap, usd };
 }
 
 function build(d) {
   current = d;
   if (chart) { chart.destroy(); chart = null; }
-  const { sig, synth } = computeSignal(d);
+  const { sig, synth, cap, usd } = computeSignal(d);
   const showComp = $("show-comp").checked;
+  const mode = document.querySelector('input[name="metric"]:checked').value; // 'sig' | 'usd'
   const cents = (u, vals) => vals.map((v) => v == null ? "" : (v * 100).toFixed(1) + "¢");
+  const dollars = (u, vals) => vals.map((v) => v == null ? "" : "$" + v.toFixed(0));
 
-  const data = [d.x, sig];
-  const series = [{}, { label: "信号 Σbid−ask平", stroke: "#d4a017", width: 2, value: (u, v) => v == null ? "" : (v * 100).toFixed(2) + "¢" }];
-  if (showComp) {
-    data.push(synth, d.draw_ask);
-    series.push({ label: "合成(Σbid)", stroke: "#2f81f7", width: 1 });
-    series.push({ label: "平局 ask", stroke: "#e5534b", width: 1 });
+  let data, series, axisVals;
+  if (mode === "usd") {
+    data = [d.x, usd];
+    series = [{}, { label: "可成交$", stroke: "#2ea043", width: 2, fill: "rgba(46,160,67,0.15)",
+                    value: (u, v) => v == null ? "" : "$" + v.toFixed(1) }];
+    axisVals = dollars;
+  } else {
+    data = [d.x, sig];
+    series = [{}, { label: "信号 Σbid−ask平", stroke: "#d4a017", width: 2,
+                    value: (u, v) => v == null ? "" : (v * 100).toFixed(2) + "¢" }];
+    if (showComp) {
+      data.push(synth, d.draw_ask);
+      series.push({ label: "合成(Σbid)", stroke: "#2f81f7", width: 1 });
+      series.push({ label: "平局 ask", stroke: "#e5534b", width: 1 });
+    }
+    axisVals = cents;
   }
   chart = new uPlot({
     width: Math.max(900, window.innerWidth - 60),
@@ -71,19 +87,24 @@ function build(d) {
     scales: { x: { time: true } },
     series,
     axes: [{ stroke: "#8b949e", grid: { stroke: "#2a314055" } },
-           { stroke: "#8b949e", grid: { stroke: "#2a314055" }, values: cents }],
+           { stroke: "#8b949e", grid: { stroke: "#2a314055" }, values: axisVals }],
     legend: { live: true },
-    plugins: [zeroPlugin()],
+    plugins: mode === "usd" ? [] : [zeroPlugin()],
   }, data, $("chart"));
 
-  // stats
-  const pos = sig.filter((v) => v != null && v > 0);
-  const maxv = sig.reduce((m, v) => (v != null && v > m ? v : m), -1);
+  // stats: signal + capacity/$ together
   const span = d.x.length > 1 ? (d.x[d.x.length - 1] - d.x[0]) / (d.x.length - 1) : 0;
-  const posSecs = Math.round(pos.length * span);
+  let posPts = 0, maxv = -1, maxUsd = 0, maxCapAtPos = 0;
+  for (let i = 0; i < sig.length; i++) {
+    if (sig[i] != null && sig[i] > 0) {
+      posPts++;
+      if (sig[i] > maxv) { maxv = sig[i]; maxCapAtPos = cap[i] || 0; }
+      if (usd[i] > maxUsd) maxUsd = usd[i];
+    }
+  }
   $("info").innerHTML = `<b>${d.home} vs ${d.away}</b> · 纳入比分 [${[...selected].join(", ") || "无"}] · ` +
-    (pos.length
-      ? `<b class="pos">信号转正 ${pos.length} 个采样点（约 ${posSecs}s），最大 +${(maxv*100).toFixed(2)}¢</b> → 有套利窗口`
+    (posPts
+      ? `<b class="pos">套利窗口 ${posPts} 点（约 ${Math.round(posPts*span)}s）· 最大信号 +${(maxv*100).toFixed(2)}¢（该刻容量约 ${(maxCapAtPos/1000).toFixed(1)}k股）· 最大可成交 ≈ $${maxUsd.toFixed(0)}</b>`
       : `<b class="neg">信号全程 ≤0（无套利窗口，符合常态）</b>`);
 }
 
@@ -119,5 +140,7 @@ async function init() {
   sel.value = def.slug; load(def.slug);
 }
 $("show-comp").addEventListener("change", () => { if (current) build(current); });
+document.querySelectorAll('input[name="metric"]').forEach((r) =>
+  r.addEventListener("change", () => { if (current) build(current); }));
 window.addEventListener("resize", () => { if (current) build(current); });
 init();

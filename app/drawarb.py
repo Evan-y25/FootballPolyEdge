@@ -28,14 +28,16 @@ def build_draw_arb(store, slug: str, n_points: int = 700) -> Optional[dict]:
         return None
     meta = store.game_meta(slug) or {"home": "", "away": "", "kickoff": ""}
 
-    # group: draw 1x2 ask; each draw-score bid
-    draw_ask_pts = []
-    score_bid_pts = {}
-    for ts, market, label, bid, ask in rows:
+    # group: draw 1x2 ask(+size); each draw-score bid(+size)
+    draw_ask_pts, draw_asz_pts = [], []
+    score_bid_pts, score_bsz_pts = {}, {}
+    for ts, market, label, bid, ask, bsz, asz in rows:
         if market == "1x2" and label == "draw":
             draw_ask_pts.append((ts, ask or 0.0))
+            draw_asz_pts.append((ts, asz or 0.0))
         elif market == "score" and _is_draw(label):
             score_bid_pts.setdefault(label, []).append((ts, bid or 0.0))
+            score_bsz_pts.setdefault(label, []).append((ts, bsz or 0.0))
     if not draw_ask_pts or not score_bid_pts:
         return None
 
@@ -60,11 +62,14 @@ def build_draw_arb(store, slug: str, n_points: int = 700) -> Optional[dict]:
         return arr
 
     draw_ask = ffill(draw_ask_pts)
+    draw_ask_size = ffill(draw_asz_pts)
     scores = {lab: ffill(pts) for lab, pts in sorted(score_bid_pts.items())}
+    scores_size = {lab: ffill(pts) for lab, pts in sorted(score_bsz_pts.items())}
 
     return {
         "slug": slug, "home": meta["home"], "away": meta["away"],
         "kickoff_ts": ko, "x": grid,
-        "draw_ask": draw_ask, "scores": scores,
+        "draw_ask": draw_ask, "draw_ask_size": draw_ask_size,
+        "scores": scores, "scores_size": scores_size,
         "available": sorted(scores.keys()),
     }
