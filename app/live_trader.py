@@ -122,8 +122,12 @@ class LiveTrader:
     def _execute(self, game, kind, legs, side, prices, sizes) -> int:
         if self.deployed >= config.LIVE_MAX_TOTAL:
             return 0
-        per_leg = min(config.LIVE_MAX_PER_LEG, (config.LIVE_MAX_TOTAL - self.deployed) / 3)
+        # available capital = min(total cap remaining, actual pUSD balance)
+        pusd = (self.onchain or {}).get("pusd") or 0.0
+        available = min(config.LIVE_MAX_TOTAL - self.deployed, pusd)
+        per_leg = min(config.LIVE_MAX_PER_LEG, available / 3)
         if per_leg < 1:
+            self._note(f"{game.home} [{kind}] 跳过: 可用资金不足(pUSD≈${pusd:.2f})", "warn")
             return 0
         n = float(int(min([per_leg / max(prices)] + [s for s in sizes if s > 0])))
         if n < 1:
