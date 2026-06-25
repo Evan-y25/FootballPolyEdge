@@ -147,37 +147,46 @@ class LiveTrader:
                 break
         if not game:
             return {"ok": False, "error": "找不到可测试的市场(需三腿都有卖单+深度)"}
+        import math
         legs = [game.home_win, game.draw, game.away_win]
         asks = [x["ask"] for x in quotes]
         sizes = [x["ask_size"] for x in quotes]
         pusd = (self.onchain or {}).get("pusd") or 0.0
-        per_leg = min(config.LIVE_TEST_PER_LEG, self.max_per_leg, pusd / 3 if pusd else 0)
-        n = float(int(min([per_leg / max(asks)] + list(sizes))))
-        if n < 1:
-            n = 1.0 if per_leg >= max(asks) else 0.0
-        if n < 1:
-            return {"ok": False, "error": f"测试额度买不起1股 (per_leg≈${per_leg:.2f}, 最贵腿{max(asks):.2f}, pUSD ${pusd:.2f})"}
+        # Per-leg budget; the CLOB enforces a $1 minimum notional per order, so
+        # size each leg to the cheapest integer share count that clears $1.
+        budget = min(self.max_per_leg, pusd / 3 if pusd else self.max_per_leg)
+        MIN_NOTIONAL = 1.0
+        n_legs = []
+        for ask, depth in zip(asks, sizes):
+            need = max(1, math.ceil(MIN_NOTIONAL / ask))      # shares to reach $1
+            cap = int(min(budget / ask, depth))               # affordable + in book
+            n_legs.append(float(need) if need <= cap else 0.0)
+        if any(n < 1 for n in n_legs):
+            return {"ok": False, "error": f"测试额度/深度不足以满足每腿$1最小单 "
+                    f"(每腿预算≈${budget:.2f}, 需≥${MIN_NOTIONAL:.0f}/腿, pUSD ${pusd:.2f})"}
         neg = any(getattr(o, "neg_risk", False) for o in legs)
         tokens = [o.yes_token for o in legs]
         labels = ["home", "draw", "away"]
-        self._note(f"🧪 测试买入 {game.home} vs {game.away} 三腿YES N={n:.0f} (非套利,验证下单链路)", "warn")
+        self._note(f"🧪 测试买入 {game.home} vs {game.away} 三腿YES N={'/'.join(f'{n:.0f}' for n in n_legs)} "
+                   f"(非套利,验证下单链路)", "warn")
         import concurrent.futures
         res = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-            futs = {ex.submit(self._place_fok, tokens[i], asks[i], n, neg): i for i in range(3)}
+            futs = {ex.submit(self._place_fok, tokens[i], asks[i], n_legs[i], neg): i for i in range(3)}
             for fut in concurrent.futures.as_completed(futs):
                 res[futs[fut]] = fut.result()
         filled = [i for i in range(3) if res[i].get("filled")]
-        cost = sum(n * asks[i] for i in filled)
+        cost = sum(n_legs[i] * asks[i] for i in filled)
         self.deployed += cost
         self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
-                             "away": game.away, "kind": "test", "shares": n,
-                             "legs": [{"leg": labels[i], "price": round(asks[i], 4), **res[i]} for i in range(3)],
+                             "away": game.away, "kind": "test", "shares": "/".join(f"{n:.0f}" for n in n_legs),
+                             "legs": [{"leg": labels[i], "price": round(asks[i], 4), "n": n_legs[i], **res[i]} for i in range(3)],
                              "filled_legs": len(filled), "cost": round(cost, 2),
                              "complete": len(filled) == 3, "done": True})
         self._note(f"🧪 测试结果: {len(filled)}/3 成交, 成本≈${cost:.2f}", "info")
         self.refresh_balance()
-        return {"ok": True, "game": f"{game.home} vs {game.away}", "shares": n,
+        return {"ok": True, "game": f"{game.home} vs {game.away}",
+                "shares": "/".join(f"{n:.0f}" for n in n_legs),
                 "filled": len(filled), "cost": round(cost, 2),
                 "legs": [{"leg": labels[i], **res[i]} for i in range(3)]}
 
