@@ -231,6 +231,8 @@ class ClobClient(ApiClient):
         self.funder = funder
         self.api_creds = api_creds
         self.builder_creds = builder_creds
+        # EOA that owns the L2 api key — POLY_ADDRESS header must be this, NOT the funder.
+        self.signer_address = ""
 
     def _build_headers(
         self,
@@ -278,7 +280,9 @@ class ClobClient(ApiClient):
                 ).hexdigest()
 
             headers.update({
-                "POLY_ADDRESS": self.funder,
+                # POLY_ADDRESS = the EOA that derived the key (createL2Headers in
+                # @polymarket/clob-client-v2 uses getSignerAddress, not the funder).
+                "POLY_ADDRESS": self.signer_address or self.funder,
                 "POLY_API_KEY": self.api_creds.api_key,
                 "POLY_TIMESTAMP": timestamp,
                 "POLY_PASSPHRASE": self.api_creds.passphrase,
@@ -316,6 +320,7 @@ class ClobClient(ApiClient):
 
         response = self._request("GET", "/auth/derive-api-key", headers=headers)
 
+        self.signer_address = signer.address
         return ApiCredentials(
             api_key=response.get("apiKey", ""),
             secret=response.get("secret", ""),
@@ -350,6 +355,7 @@ class ClobClient(ApiClient):
 
         response = self._request("POST", "/auth/api-key", headers=headers)
 
+        self.signer_address = signer.address
         return ApiCredentials(
             api_key=response.get("apiKey", ""),
             secret=response.get("secret", ""),
