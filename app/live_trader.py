@@ -164,24 +164,77 @@ class LiveTrader:
         tokens = [o.yes_token if side == "yes" else o.no_token for o in legs]
         neg = any(getattr(o, "neg_risk", False) for o in legs)
         labels = ["home", "draw", "away"]
-        self._note(f"⚔️ 执行 {game.home} vs {game.away} [{kind}] N={n:.0f}股×3 (neg={neg})", "warn")
-        results, filled, cost = [], 0, 0.0
-        for lbl, tok, px in zip(labels, tokens, prices):
-            r = self._place_fok(tok, px, n, neg)
-            results.append({"leg": lbl, "price": round(px, 4), **r})
-            if r.get("filled"):
-                filled += 1
-                cost += n * px
+        # ① probe the THINNEST leg first (riskiest to fill) with zero prior exposure
+        order_idx = sorted(range(3), key=lambda i: sizes[i] if sizes[i] > 0 else 1e18)
+        probe = order_idx[0]
+        self._note(f"⚔️ {game.home} vs {game.away} [{kind}] N={n:.0f}股 · 探路腿={labels[probe]}(量{sizes[probe]:.0f})", "warn")
+        res = {probe: self._place_fok(tokens[probe], prices[probe], n, neg)}
+        if not res[probe].get("filled"):
+            self._note(f"探路腿 {labels[probe]} 未成交 → 放弃（无敞口）", "info")
+            self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
+                                 "away": game.away, "kind": kind, "shares": n,
+                                 "legs": [{"leg": labels[probe], "price": round(prices[probe], 4), **res[probe]}],
+                                 "filled_legs": 0, "cost": 0.0, "complete": False,
+                                 "note": "探路未成,无敞口", "done": True})
+            return 1
+        # ② probe filled -> fire the other two legs CONCURRENTLY (shrink the window)
+        import concurrent.futures
+        others = order_idx[1:]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+            futs = {ex.submit(self._place_fok, tokens[i], prices[i], n, neg): i for i in others}
+            for fut in concurrent.futures.as_completed(futs):
+                res[futs[fut]] = fut.result()
+        filled = [i for i in range(3) if res[i].get("filled")]
+        cost = sum(n * prices[i] for i in filled)
+        ok = len(filled) == 3
+        # ③ partial fill -> auto-unwind the filled legs to flatten the directional exposure
+        unwound = []
+        if not ok:
+            self._note(f"⚠️ 仅 {len(filled)}/3 成交 → 自动平腿 {[labels[i] for i in filled]}", "warn")
+            for i in filled:
+                u = self._unwind(tokens[i], n, neg)
+                unwound.append({"leg": labels[i], **u})
         self.deployed += cost
-        ok = filled == 3
         self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
-                             "away": game.away, "kind": kind, "shares": n, "legs": results,
-                             "filled_legs": filled, "cost": round(cost, 2), "complete": ok, "done": True})
+                             "away": game.away, "kind": kind, "shares": n,
+                             "legs": [{"leg": labels[i], "price": round(prices[i], 4), **res[i]} for i in range(3)],
+                             "filled_legs": len(filled), "cost": round(cost, 2), "complete": ok,
+                             "unwound": unwound, "done": True})
         self._note((f"✅ {game.home} [{kind}] 三腿全成交 ≈${cost:.2f}" if ok
-                    else f"⚠️ {game.home} [{kind}] 仅 {filled}/3 成交 → 单边敞口! ≈${cost:.2f}"),
+                    else f"⚠️ {game.home} [{kind}] {len(filled)}/3成交,已尝试平腿"),
                    "info" if ok else "warn")
         self.refresh_balance()
         return 1
+
+    def _unwind(self, token_id, size, neg_risk) -> dict:
+        """Flatten a filled leg by market-SELL (FOK) at the current bid."""
+        b = self.state.token_best(token_id)
+        bid = b.get("bid", 0)
+        if not (bid and bid > 0):
+            self._note(f"平腿失败: {token_id[:10]} 无买价 → 敞口留存!", "warn")
+            return {"unwound": False, "reason": "no bid"}
+        r = self._place_sell(token_id, bid, size, neg_risk)
+        self._note(f"平腿 {token_id[:10]} 卖@{bid:.3f}: {r.get('status')}", "warn")
+        return {"unwound": r.get("filled", False), **r}
+
+    def _place_sell(self, token_id, price, size, neg_risk) -> dict:
+        try:
+            from .poly.signer import Order, ZERO_BYTES32_HEX
+            px = max(0.001, round(float(price) - 0.001, 3))  # cross down to ensure fill
+            order = Order(token_id=str(token_id), price=px, size=float(size), side="SELL",
+                          maker=self.funder, signature_type=config.POLY_SIGNATURE_TYPE,
+                          neg_risk=neg_risk, builder_code=config.POLY_BUILDER_CODE or ZERO_BYTES32_HEX)
+            # vendored Order uses the BUY amount formula; swap for SELL (maker gives shares)
+            order.maker_amount = str(int(size * 1_000_000))
+            order.taker_amount = str(int(size * px * 1_000_000))
+            signed = self.signer.sign_order(order)
+            resp = self.client.post_order(signed, order_type="FOK")
+            resp = resp if isinstance(resp, dict) else {}
+            return {"filled": resp.get("status") == "matched", "status": resp.get("status"),
+                    "orderID": resp.get("orderID"), "errorMsg": resp.get("errorMsg")}
+        except Exception as exc:  # noqa: BLE001
+            self._note(f"平腿下单异常: {type(exc).__name__}: {exc}", "warn")
+            return {"filled": False, "status": "error", "error": str(exc)[:200]}
 
     def _place_fok(self, token_id, price, size, neg_risk) -> dict:
         try:

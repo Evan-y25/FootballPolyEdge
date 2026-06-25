@@ -42,7 +42,13 @@ function render(d) {
     bs.map((b) => {
       const t = new Date(b.ts * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
       const legs = (b.legs || []).map((l) => `${l.leg}:${l.status || l.error || "?"}`).join(" ");
-      const fill = b.complete ? `<span class="ok">3/3 ✅</span>` : `<span class="bad">${b.filled_legs}/3 ⚠️敞口</span>`;
+      let fill;
+      if (b.complete) fill = `<span class="ok">3/3 ✅</span>`;
+      else if (b.filled_legs === 0) fill = `<span class="muted">0/3 探路未成(无敞口)</span>`;
+      else {
+        const uw = (b.unwound || []).filter((u) => u.unwound).length;
+        fill = `<span class="bad">${b.filled_legs}/3 → 平腿${uw}/${b.filled_legs}${uw === b.filled_legs ? '✓' : '⚠️'}</span>`;
+      }
       return `<tr><td>${t}</td><td>${b.home} vs ${b.away}</td><td>${b.kind === "back" ? "正套YES" : "反套NO"}</td>
         <td>${b.shares}</td><td>${fill}</td><td>$${b.cost}</td><td class="muted">${legs}</td></tr>`;
     }).join("") + "</tbody></table>"
