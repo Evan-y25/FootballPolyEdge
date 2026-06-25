@@ -300,9 +300,8 @@ class LiveTrader:
             order = Order(token_id=str(token_id), price=px, size=float(size), side="SELL",
                           maker=self.funder, signature_type=config.POLY_SIGNATURE_TYPE,
                           neg_risk=neg_risk, builder_code=config.POLY_BUILDER_CODE or ZERO_BYTES32_HEX)
-            # vendored Order uses the BUY amount formula; swap for SELL (maker gives shares)
-            order.maker_amount = str(int(size * 1_000_000))
-            order.taker_amount = str(int(size * px * 1_000_000))
+            # Order now computes SELL amounts with market precision (maker=shares,
+            # taker=USDC rounded down to cents) — no manual override needed.
             signed = self.signer.sign_order(order)
             resp = self.client.post_order(signed, order_type="FOK")
             resp = resp if isinstance(resp, dict) else {}

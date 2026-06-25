@@ -25,6 +25,7 @@ Example:
     )
 """
 
+import math
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -132,8 +133,17 @@ class Order:
         _bytes32_from_hex(self.builder_code)
         _bytes32_from_hex(self.metadata)
 
-        self.maker_amount = str(int(self.size * self.price * 10**USDC_DECIMALS))
-        self.taker_amount = str(int(self.size * 10**USDC_DECIMALS))
+        # Marketable FOK orders are validated as "market orders": makerAmount
+        # (USDC) max 2 decimals, takerAmount (shares) max 5 decimals.
+        if self.side == "BUY":
+            # USDC paid: round UP to cents so the order stays marketable (>= ask).
+            cents = math.ceil(round(self.size * self.price, 8) * 100)
+            self.maker_amount = str(cents * 10 ** (USDC_DECIMALS - 2))
+            self.taker_amount = str(int(round(self.size * 10**USDC_DECIMALS)))  # shares
+        else:  # SELL — maker = shares, taker = USDC received (round DOWN to cents)
+            self.maker_amount = str(int(round(self.size * 10**USDC_DECIMALS)))
+            cents = math.floor(round(self.size * self.price, 8) * 100)
+            self.taker_amount = str(cents * 10 ** (USDC_DECIMALS - 2))
         self.side_value = 0 if self.side == "BUY" else 1
 
 
