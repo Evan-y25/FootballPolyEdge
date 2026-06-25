@@ -174,6 +174,22 @@ async def _api_replay(request: web.Request) -> web.Response:
     return web.json_response(data)
 
 
+async def _drawarb_page(request: web.Request) -> web.Response:
+    return web.FileResponse(FRONTEND_DIR / "drawarb.html")
+
+
+async def _api_drawarb(request: web.Request) -> web.Response:
+    from . import drawarb
+    store = request.app["store"]
+    slug = request.query.get("slug", "")
+    if store is None or not slug:
+        return web.json_response({"error": "missing slug or store"}, status=400)
+    data = drawarb.build_draw_arb(store, slug)
+    if data is None:
+        return web.json_response({"error": "no draw data for slug"}, status=404)
+    return web.json_response(data)
+
+
 async def _api_arb(request: web.Request) -> web.Response:
     arb = request.app.get("arb")
     if arb is None:
@@ -260,6 +276,8 @@ def build_app(state: AppState, broadcaster: Broadcaster, paper, auto, store=None
     app.router.add_get("/replay", _replay_page)
     app.router.add_get("/api/replay/games", _api_replay_games)
     app.router.add_get("/api/replay", _api_replay)
+    app.router.add_get("/drawarb", _drawarb_page)
+    app.router.add_get("/api/drawarb", _api_drawarb)
     app.router.add_get("/ws", _ws_handler)
     app.router.add_get("/{name:[^/]+\\.(css|js)}", _static)
     return app

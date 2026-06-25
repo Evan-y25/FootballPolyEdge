@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>跨市场平局套利信号 · FootballPolyEdge</title>
+  <link rel="stylesheet" href="/uplot.min.css" />
+  <style>
+    :root{--bg:#0e1117;--panel:#161b22;--panel2:#1c2230;--border:#2a3140;--text:#e6edf3;--muted:#8b949e;--accent:#2f81f7;--green:#2ea043;--red:#e5534b;}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px}
+    .topbar{display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;flex-wrap:wrap}
+    .brand{font-weight:700} .brand a{color:var(--muted);text-decoration:none;font-weight:400;font-size:12px;margin-left:8px}
+    select{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;max-width:420px}
+    .toolbar{display:flex;align-items:center;gap:16px;padding:10px 20px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel);font-size:13px}
+    .muted{color:var(--muted)} label{cursor:pointer}
+    #info{padding:8px 20px;font-size:13px}
+    #info b.pos{color:var(--green)} #info b.neg{color:var(--muted)}
+    #chart{padding:12px 20px}
+    .note{padding:0 20px 24px;font-size:12px;color:var(--muted);line-height:1.7}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">⚖️ 跨市场平局套利信号 <a href="/">← 实时盘口</a> <a href="/replay">盘口回放</a></div>
+    <select id="game"></select>
+  </div>
+  <div class="toolbar">
+    <span>纳入平局比分(卖出 bid)：</span>
+    <span id="score-toggles"></span>
+    <span class="muted">| 信号 = Σ选中比分 bid − 平局 ask · &gt;0(绿色) 即套利窗口</span>
+    <label style="margin-left:auto"><input type="checkbox" id="show-comp" /> 显示分量(合成和 vs 平局ask)</label>
+  </div>
+  <div id="info">选择一场比赛…</div>
+  <div id="chart"></div>
+  <div class="note">
+    信号 = <b>Σ(勾选的平局比分 YES bid) − 平局(1X2) YES ask</b>。<br>
+    &gt;0 时存在跨市场套利：<b>买入平局YES + 卖出这些比分YES（=买它们的NO）</b>，持有到结算锁定该差值（且若踢出未纳入的高比分平局还有额外收益）。<br>
+    平时为负（平局含 3-3、4-4 尾巴，天然比列出的分量贵）；只有进球/重定价瞬间分量盘没跟上时才可能转正。点差已隐含（比分取 bid、平局取 ask，都是对你不利的一边）。
+  </div>
+  <script src="/uplot.iife.min.js"></script>
+  <script src="/drawarb.js"></script>
+</body>
+</html>
