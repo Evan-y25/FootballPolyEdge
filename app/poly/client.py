@@ -521,13 +521,20 @@ class ClobClient(ApiClient):
 
         owner = self.api_creds.api_key if self.api_creds and self.api_creds.is_valid() else self.funder
 
+        # Body shape matches @polymarket/clob-client-v2 orderToJsonV2:
+        # top-level deferExec/postOnly flags + nested order + owner + orderType.
         body = {
+            "deferExec": False,
+            "postOnly": False,
             "order": order_body,
             "owner": owner,
             "orderType": order_type,
         }
 
-        body_json = json.dumps(body, separators=(',', ':'))
+        # HMAC must be computed over the EXACT bytes transmitted. `requests`
+        # serializes `json=` with default separators (with spaces), so sign the
+        # same string here rather than a compact variant.
+        body_json = json.dumps(body)
         headers = self._build_headers("POST", endpoint, body_json)
 
         return self._request(

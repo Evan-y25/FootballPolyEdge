@@ -94,7 +94,9 @@ LIVE_ENABLED = os.environ.get("LIVE_ENABLED", "0") in ("1", "true", "True")
 CLOB_HOST = os.environ.get("CLOB_HOST", "https://clob.polymarket.com")
 POLY_PRIVATE_KEY = os.environ.get("POLY_PRIVATE_KEY", "")   # EOA key — NEVER logged/committed/exposed
 POLY_FUNDER = os.environ.get("POLY_FUNDER", "")             # Poly Proxy (Safe) address holding USDC
-POLY_SIGNATURE_TYPE = _int("POLY_SIGNATURE_TYPE", 2)
+# V2 SignatureTypeV2: 0=EOA, 1=POLY_PROXY, 2=POLY_GNOSIS_SAFE, 3=POLY_1271.
+# Polymarket web/proxy (Safe) funders verify via EIP-1271 -> 3 (matches FreeProject).
+POLY_SIGNATURE_TYPE = _int("POLY_SIGNATURE_TYPE", 3)
 # CLOB V2 builder attribution: a bytes32 hex stamped into each order's `builder` field.
 # Optional — leave blank to trade without attribution.
 POLY_BUILDER_CODE = os.environ.get("POLY_BUILDER_CODE", "")

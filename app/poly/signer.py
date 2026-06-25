@@ -107,7 +107,9 @@ class Order:
             self.timestamp_ms = int(time.time() * 1000)
 
         if self.salt is None:
-            self.salt = secrets.randbelow(2**64)
+            # < 2^53 so the JSON integer round-trips exactly (the CLOB and the
+            # JS reference client serialize salt as a plain number, not a string)
+            self.salt = secrets.randbelow(2**52)
 
         # Validate bytes32 fields early
         _bytes32_from_hex(self.builder_code)
@@ -246,16 +248,20 @@ class OrderSigner:
             signed = self.wallet.sign_message(signable)
             signature_hex = "0x" + signed.signature.hex()
 
+            # Wire order shape matches @polymarket/clob-client-v2 orderToJsonV2:
+            # salt as a NUMBER, an `expiration` field (default "0", not signed),
+            # no `taker` (undefined in the JS builder -> omitted from JSON).
             wire_order = {
-                "salt": str(int(order.salt)),
+                "salt": int(order.salt),
                 "maker": to_checksum_address(order.maker),
                 "signer": self.address,
-                "tokenId": order.token_id,
+                "tokenId": str(order.token_id),
                 "makerAmount": str(int(order.maker_amount)),
                 "takerAmount": str(int(order.taker_amount)),
                 "side": order.side,
                 "signatureType": order.signature_type,
                 "timestamp": str(int(order.timestamp_ms)),
+                "expiration": "0",
                 "metadata": order.metadata,
                 "builder": order.builder_code,
                 "signature": signature_hex,
