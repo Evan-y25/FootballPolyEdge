@@ -225,10 +225,16 @@ class OrderSigner:
     def sign_order(self, order: Order) -> Dict[str, Any]:
         """Sign a V2 order. Returns a dict shaped for the POST /order body."""
         try:
+            maker_addr = to_checksum_address(order.maker)
+            # createOrder in clob-client-v2: for POLY_1271 the order's `signer`
+            # field IS the maker (the smart-wallet/proxy), not the EOA — the EOA
+            # still produces the ECDSA sig, validated via EIP-1271 against maker.
+            # For EOA/PROXY/GNOSIS_SAFE the signer field is the EOA.
+            signer_field = maker_addr if order.signature_type == 3 else self.address
             order_message = {
                 "salt": int(order.salt),
-                "maker": to_checksum_address(order.maker),
-                "signer": self.address,
+                "maker": maker_addr,
+                "signer": signer_field,
                 "tokenId": int(order.token_id),
                 "makerAmount": int(order.maker_amount),
                 "takerAmount": int(order.taker_amount),
@@ -253,8 +259,8 @@ class OrderSigner:
             # no `taker` (undefined in the JS builder -> omitted from JSON).
             wire_order = {
                 "salt": int(order.salt),
-                "maker": to_checksum_address(order.maker),
-                "signer": self.address,
+                "maker": maker_addr,
+                "signer": signer_field,
                 "tokenId": str(order.token_id),
                 "makerAmount": str(int(order.maker_amount)),
                 "takerAmount": str(int(order.taker_amount)),
