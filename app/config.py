@@ -101,6 +101,7 @@ POLY_BUILDER_CODE = os.environ.get("POLY_BUILDER_CODE", "")
 LIVE_MAX_PER_LEG = _float("LIVE_MAX_PER_LEG", 5.0)         # max USDC per leg
 LIVE_MAX_TOTAL = _float("LIVE_MAX_TOTAL", 100.0)          # max cumulative USDC deployed live
 LIVE_MIN_EDGE = _float("LIVE_MIN_EDGE", 0.01)            # min arb edge to fire live (1%)
+LIVE_MAX_EDGE = _float("LIVE_MAX_EDGE", 0.10)            # edges above this = stale/thin artifact, reject
 LIVE_MAX_PER_GAME = _int("LIVE_MAX_PER_GAME", 1)
 LIVE_INTERVAL = _int("LIVE_INTERVAL", 3)
 

@@ -139,14 +139,26 @@ class LiveTrader:
             if (g.slug, "back") not in held:
                 q = [self.state.token_best(o.yes_token) for o in legs]
                 asks = [x["ask"] for x in q]
-                if all(a > 0 for a in asks) and sum(asks) < 1 - self.min_edge:
-                    opened += self._execute(g, "back", legs, "yes", asks, [x["ask_size"] for x in q])
+                sizes = [x["ask_size"] for x in q]
+                if self._valid_arb(asks, sizes, 1.0):
+                    opened += self._execute(g, "back", legs, "yes", asks, sizes)
             if (g.slug, "lay") not in held:
                 q = [self.state.token_best(o.no_token) for o in legs]
                 asks = [x["ask"] for x in q]
-                if all(a > 0 for a in asks) and sum(asks) < 2 - self.min_edge:
-                    opened += self._execute(g, "lay", legs, "no", asks, [x["ask_size"] for x in q])
+                sizes = [x["ask_size"] for x in q]
+                if self._valid_arb(asks, sizes, 2.0):
+                    opened += self._execute(g, "lay", legs, "no", asks, sizes)
         return {"opened": opened}
+
+    def _valid_arb(self, asks, sizes, payout) -> bool:
+        """Real arb gate: all legs priced AND have real depth, profit/set in (min,max].
+        payout=1 (back, buy YES) or 2 (lay, buy NO). Rejects stale/thin artifacts."""
+        if not all(a and a > 0 for a in asks):
+            return False
+        if not all(s and s > 0 for s in sizes):   # every leg needs real top-of-book depth
+            return False
+        edge = payout - sum(asks)                  # profit per set ($)
+        return self.min_edge <= edge <= config.LIVE_MAX_EDGE
 
     def _execute(self, game, kind, legs, side, prices, sizes) -> int:
         if self.deployed >= self.max_total:
