@@ -30,9 +30,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
+from eth_abi import encode as abi_encode
 from eth_account import Account
 from eth_account.messages import encode_typed_data
-from eth_utils import to_checksum_address
+from eth_utils import keccak, to_checksum_address
 
 
 USDC_DECIMALS = 6
@@ -42,6 +43,22 @@ EXCHANGE_V2_ADDRESS = "0xE111180000d2663C0091e4f400237545B87B996B"
 NEG_RISK_EXCHANGE_V2_ADDRESS = "0xe2222d279d744050d28e00520010520000310F59"
 
 ZERO_BYTES32_HEX = "0x" + "00" * 32
+
+# ERC-7739 "TypedDataSign" pieces for POLY_1271 (smart-wallet) signatures —
+# ported verbatim from @polymarket/clob-client-v2 exchangeOrderBuilderV2.
+_ORDER_TYPE_STRING = (
+    "Order(uint256 salt,address maker,address signer,uint256 tokenId,"
+    "uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,"
+    "uint256 timestamp,bytes32 metadata,bytes32 builder)"
+)
+_ORDER_TYPE_HASH = keccak(text=_ORDER_TYPE_STRING)
+_DOMAIN_TYPE_HASH = keccak(
+    text="EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+)
+_CTF_EXCHANGE_NAME = "Polymarket CTF Exchange"
+_CTF_EXCHANGE_VERSION = "2"
+_CTF_EXCHANGE_NAME_HASH = keccak(text=_CTF_EXCHANGE_NAME)
+_CTF_EXCHANGE_VERSION_HASH = keccak(text=_CTF_EXCHANGE_VERSION)
 
 
 def _bytes32_from_hex(value: str) -> bytes:
@@ -245,14 +262,17 @@ class OrderSigner:
                 "builder": _bytes32_from_hex(order.builder_code),
             }
 
-            signable = encode_typed_data(
-                domain_data=self._exchange_domain(order.neg_risk),
-                message_types=self.ORDER_TYPES,
-                message_data=order_message,
-            )
-
-            signed = self.wallet.sign_message(signable)
-            signature_hex = "0x" + signed.signature.hex()
+            if order.signature_type == 3:
+                # POLY_1271: ERC-7739 TypedDataSign wrapped signature.
+                signature_hex = self._sign_1271(order_message, order.neg_risk)
+            else:
+                signable = encode_typed_data(
+                    domain_data=self._exchange_domain(order.neg_risk),
+                    message_types=self.ORDER_TYPES,
+                    message_data=order_message,
+                )
+                signed = self.wallet.sign_message(signable)
+                signature_hex = "0x" + signed.signature.hex()
 
             # Wire order shape matches @polymarket/clob-client-v2 orderToJsonV2:
             # salt as a NUMBER, an `expiration` field (default "0", not signed),
@@ -283,6 +303,82 @@ class OrderSigner:
 
         except Exception as e:
             raise SignerError(f"Failed to sign order: {e}")
+
+    def _sign_1271(self, m: Dict[str, Any], neg_risk: bool) -> str:
+        """Build an ERC-7739 TypedDataSign signature for POLY_1271 smart wallets.
+
+        Layout (matches @polymarket/clob-client-v2 buildOrderSignature):
+            innerSig ‖ appDomainSep ‖ contentsHash ‖ hex(typeString) ‖ uint16(len)
+        The EOA produces innerSig over the nested TypedDataSign struct; the funder
+        Safe validates it via EIP-1271 isValidSignature.
+        """
+        contract = to_checksum_address(
+            NEG_RISK_EXCHANGE_V2_ADDRESS if neg_risk else EXCHANGE_V2_ADDRESS
+        )
+
+        # App (CTF Exchange) EIP-712 domain separator.
+        app_domain_sep = keccak(
+            abi_encode(
+                ["bytes32", "bytes32", "bytes32", "uint256", "address"],
+                [_DOMAIN_TYPE_HASH, _CTF_EXCHANGE_NAME_HASH,
+                 _CTF_EXCHANGE_VERSION_HASH, self.chain_id, contract],
+            )
+        )
+
+        # hashStruct(Order) — the order's EIP-712 struct hash.
+        contents_hash = keccak(
+            abi_encode(
+                ["bytes32", "uint256", "address", "address", "uint256", "uint256",
+                 "uint256", "uint8", "uint8", "uint256", "bytes32", "bytes32"],
+                [_ORDER_TYPE_HASH, m["salt"], m["maker"], m["signer"], m["tokenId"],
+                 m["makerAmount"], m["takerAmount"], m["side"], m["signatureType"],
+                 m["timestamp"], m["metadata"], m["builder"]],
+            )
+        )
+
+        # Inner EIP-712 signature over the nested TypedDataSign struct.
+        full_message = {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "TypedDataSign": [
+                    {"name": "contents", "type": "Order"},
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                    {"name": "salt", "type": "bytes32"},
+                ],
+                "Order": self.ORDER_TYPES["Order"],
+            },
+            "primaryType": "TypedDataSign",
+            "domain": {
+                "name": _CTF_EXCHANGE_NAME,
+                "version": _CTF_EXCHANGE_VERSION,
+                "chainId": self.chain_id,
+                "verifyingContract": contract,
+            },
+            "message": {
+                "contents": m,
+                "name": "DepositWallet",
+                "version": "1",
+                "chainId": self.chain_id,
+                "verifyingContract": m["signer"],   # the funder smart wallet
+                "salt": b"\x00" * 32,
+            },
+        }
+        signable = encode_typed_data(full_message=full_message)
+        inner_sig = self.wallet.sign_message(signable).signature.hex()
+        inner_sig = inner_sig[2:] if inner_sig.startswith("0x") else inner_sig
+
+        type_hex = _ORDER_TYPE_STRING.encode().hex()
+        len_hex = format(len(_ORDER_TYPE_STRING.encode()), "04x")
+        return ("0x" + inner_sig + app_domain_sep.hex()
+                + contents_hash.hex() + type_hex + len_hex)
 
     def sign_order_dict(
         self,
