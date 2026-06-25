@@ -168,10 +168,19 @@ class ApiClient(ThreadLocalSessionMixin):
 
             except requests.exceptions.RequestException as e:
                 last_error = e
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    try:
+                        body = resp.text[:600]
+                    except Exception:  # noqa: BLE001
+                        body = ""
+                    last_error = f"HTTP {resp.status_code}: {body}"
+                    if 400 <= resp.status_code < 500:
+                        break  # client error is deterministic — don't retry, surface it
                 if attempt < self.retry_count - 1:
                     time.sleep(2 ** attempt)  # Exponential backoff
 
-        raise ApiError(f"Request failed after {self.retry_count} attempts: {last_error}")
+        raise ApiError(f"{last_error}")
 
 
 class ClobClient(ApiClient):
