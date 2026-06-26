@@ -73,6 +73,24 @@ CREATE TABLE IF NOT EXISTS evolution (
     adopted     INTEGER,
     note        TEXT
 );
+
+CREATE TABLE IF NOT EXISTS live_events (
+    id          INTEGER PRIMARY KEY,
+    ts          INTEGER,
+    level       TEXT,
+    desc        TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_live_events_ts ON live_events(ts);
+
+CREATE TABLE IF NOT EXISTS live_baskets (
+    id          INTEGER PRIMARY KEY,
+    ts          INTEGER,
+    slug        TEXT, home TEXT, away TEXT,
+    kind        TEXT, shares TEXT,
+    filled_legs INTEGER, cost REAL, complete INTEGER,
+    legs        TEXT          -- JSON of per-leg results
+);
+CREATE INDEX IF NOT EXISTS idx_live_baskets_ts ON live_baskets(ts);
 """
 
 
@@ -185,6 +203,49 @@ class Store:
                  1 if adopted else 0, note),
             )
             self._conn.commit()
+
+    # ---- live trading audit trail ---------------------------------------
+    def record_live_event(self, ts: int, level: str, desc: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO live_events(ts,level,desc) VALUES(?,?,?)", (ts, level, desc))
+            self._conn.commit()
+
+    def record_live_basket(self, b: dict) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO live_baskets(ts,slug,home,away,kind,shares,filled_legs,cost,complete,legs)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (b.get("ts"), b.get("slug"), b.get("home"), b.get("away"), b.get("kind"),
+                 str(b.get("shares")), b.get("filled_legs"), b.get("cost"),
+                 1 if b.get("complete") else 0,
+                 json.dumps(b.get("legs", []), ensure_ascii=False)),
+            )
+            self._conn.commit()
+
+    def live_events(self, limit: int = 200) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ts,level,desc FROM live_events ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [{"ts": r[0], "level": r[1], "desc": r[2]} for r in rows]
+
+    def live_baskets(self, limit: int = 100) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ts,slug,home,away,kind,shares,filled_legs,cost,complete,legs"
+                " FROM live_baskets ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                legs = json.loads(r[9]) if r[9] else []
+            except Exception:  # noqa: BLE001
+                legs = []
+            out.append({"ts": r[0], "slug": r[1], "home": r[2], "away": r[3], "kind": r[4],
+                        "shares": r[5], "filled_legs": r[6], "cost": r[7],
+                        "complete": bool(r[8]), "legs": legs, "done": True})
+        return out
 
     # ---- replay helpers (used by backtest) ------------------------------
     def ticks_for_slug(self, slug: str) -> List[dict]:

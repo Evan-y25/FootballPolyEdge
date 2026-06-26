@@ -124,7 +124,7 @@ async def run() -> None:
     arb_paper.journal_all()
     arb = ArbExecutor(state, arb_paper)
     arb.enabled = config.ARB_ENABLED
-    live = LiveTrader(state)
+    live = LiveTrader(state, store)
     logger.info("Store at %s | %s | evolve=%s autocommit=%s",
                 config.DB_PATH, store.stats(), config.EVOLVE_ENABLED, config.EVOLVE_AUTOCOMMIT)
 

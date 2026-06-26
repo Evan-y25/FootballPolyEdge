@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 
 
 class LiveTrader:
-    def __init__(self, state) -> None:
+    def __init__(self, state, store=None) -> None:
         self.state = state
+        self.store = store
         self.enabled = config.LIVE_ENABLED
         self.armed = False
         self.signer = None
@@ -48,10 +49,34 @@ class LiveTrader:
         # scan heartbeat / observability (updated every scan_once)
         self.scan: dict = {"ts": 0, "count": 0, "games": 0, "candidates": 0,
                            "best_back": None, "best_lay": None}
+        # restore audit trail from the DB so it survives restarts (for review).
+        # `deployed` intentionally NOT restored — the total cap stays per-session.
+        if self.store is not None:
+            try:
+                for ev in reversed(self.store.live_events(80)):
+                    self.log.appendleft(ev)
+                self.baskets = list(reversed(self.store.live_baskets(100)))
+            except Exception:  # noqa: BLE001
+                pass
 
     def _note(self, desc: str, level: str = "info") -> None:
-        self.log.appendleft({"ts": int(time.time()), "desc": desc, "level": level})
+        ts = int(time.time())
+        self.log.appendleft({"ts": ts, "desc": desc, "level": level})
+        if self.store is not None:
+            try:
+                self.store.record_live_event(ts, level, desc)
+            except Exception:  # noqa: BLE001
+                pass
         getattr(logger, "warning" if level == "warn" else "info")("LIVE: %s", desc)
+
+    def _add_basket(self, b: dict) -> None:
+        """Append a basket (test/back/lay attempt) and persist it for review."""
+        self.baskets.append(b)
+        if self.store is not None:
+            try:
+                self.store.record_live_basket(b)
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- init -----------------------------------------------------------
     def init(self) -> None:
@@ -181,7 +206,7 @@ class LiveTrader:
         filled = [i for i in range(3) if res[i].get("filled")]
         cost = sum(n_legs[i] * asks[i] for i in filled)
         self.deployed += cost
-        self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
+        self._add_basket({"ts": int(time.time()), "slug": game.slug, "home": game.home,
                              "away": game.away, "kind": "test", "shares": "/".join(f"{n:.0f}" for n in n_legs),
                              "legs": [{"leg": labels[i], "price": round(asks[i], 4), "n": n_legs[i], **res[i]} for i in range(3)],
                              "filled_legs": len(filled), "cost": round(cost, 2),
@@ -271,7 +296,7 @@ class LiveTrader:
         res = {probe: self._place_fok(tokens[probe], prices[probe], n, neg)}
         if not res[probe].get("filled"):
             self._note(f"探路腿 {labels[probe]} 未成交 → 放弃（无敞口）", "info")
-            self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
+            self._add_basket({"ts": int(time.time()), "slug": game.slug, "home": game.home,
                                  "away": game.away, "kind": kind, "shares": n,
                                  "legs": [{"leg": labels[probe], "price": round(prices[probe], 4), **res[probe]}],
                                  "filled_legs": 0, "cost": 0.0, "complete": False,
@@ -295,7 +320,7 @@ class LiveTrader:
                 u = self._unwind(tokens[i], n, neg)
                 unwound.append({"leg": labels[i], **u})
         self.deployed += cost
-        self.baskets.append({"ts": int(time.time()), "slug": game.slug, "home": game.home,
+        self._add_basket({"ts": int(time.time()), "slug": game.slug, "home": game.home,
                              "away": game.away, "kind": kind, "shares": n,
                              "legs": [{"leg": labels[i], "price": round(prices[i], 4), **res[i]} for i in range(3)],
                              "filled_legs": len(filled), "cost": round(cost, 2), "complete": ok,
