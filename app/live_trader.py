@@ -45,6 +45,9 @@ class LiveTrader:
         self.deployed = 0.0
         self.baskets: List[dict] = []
         self.log: Deque[dict] = deque(maxlen=80)
+        # scan heartbeat / observability (updated every scan_once)
+        self.scan: dict = {"ts": 0, "count": 0, "games": 0, "candidates": 0,
+                           "best_back": None, "best_lay": None}
 
     def _note(self, desc: str, level: str = "info") -> None:
         self.log.appendleft({"ts": int(time.time()), "desc": desc, "level": level})
@@ -196,22 +199,35 @@ class LiveTrader:
             return {"opened": 0, "reason": "未启用/未就绪/未武装"}
         held = {(b["slug"], b["kind"]) for b in self.baskets if not b.get("done")}
         opened = 0
+        scanned = candidates = 0
+        best_back = best_lay = None   # {"edge", "game"} — closest-to-arb with real depth
         for g in self.state.games:
             legs = [g.home_win, g.draw, g.away_win]
             if not all(legs) or g.status() == "live":
                 continue
-            if (g.slug, "back") not in held:
-                q = [self.state.token_best(o.yes_token) for o in legs]
-                asks = [x["ask"] for x in q]
-                sizes = [x["ask_size"] for x in q]
-                if self._valid_arb(asks, sizes, 1.0):
-                    opened += self._execute(g, "back", legs, "yes", asks, sizes)
-            if (g.slug, "lay") not in held:
-                q = [self.state.token_best(o.no_token) for o in legs]
-                asks = [x["ask"] for x in q]
-                sizes = [x["ask_size"] for x in q]
-                if self._valid_arb(asks, sizes, 2.0):
-                    opened += self._execute(g, "lay", legs, "no", asks, sizes)
+            scanned += 1
+            yq = [self.state.token_best(o.yes_token) for o in legs]
+            nq = [self.state.token_best(o.no_token) for o in legs]
+            y_asks = [x["ask"] for x in yq]; y_sizes = [x["ask_size"] for x in yq]
+            n_asks = [x["ask"] for x in nq]; n_sizes = [x["ask_size"] for x in nq]
+            name = f"{g.home} vs {g.away}"
+            # closest-edge tracking (only games with real depth on every leg)
+            if all(a and a > 0 for a in y_asks) and all(s and s > 0 for s in y_sizes):
+                candidates += 1
+                e = round(1.0 - sum(y_asks), 4)
+                if best_back is None or e > best_back["edge"]:
+                    best_back = {"edge": e, "game": name}
+            if all(a and a > 0 for a in n_asks) and all(s and s > 0 for s in n_sizes):
+                e = round(2.0 - sum(n_asks), 4)
+                if best_lay is None or e > best_lay["edge"]:
+                    best_lay = {"edge": e, "game": name}
+            if (g.slug, "back") not in held and self._valid_arb(y_asks, y_sizes, 1.0):
+                opened += self._execute(g, "back", legs, "yes", y_asks, y_sizes)
+            if (g.slug, "lay") not in held and self._valid_arb(n_asks, n_sizes, 2.0):
+                opened += self._execute(g, "lay", legs, "no", n_asks, n_sizes)
+        self.scan = {"ts": int(time.time()), "count": self.scan["count"] + 1,
+                     "games": scanned, "candidates": candidates,
+                     "best_back": best_back, "best_lay": best_lay}
         return {"opened": opened}
 
     def _valid_arb(self, asks, sizes, payout) -> bool:
@@ -343,6 +359,8 @@ class LiveTrader:
             "caps": {"per_leg": self.max_per_leg, "total": self.max_total,
                      "min_edge": self.min_edge},
             "builder": bool(config.POLY_BUILDER_CODE),
+            "scan": self.scan,
+            "interval": config.LIVE_INTERVAL,
             "baskets": list(reversed(self.baskets[-40:])),
             "log": list(self.log),
         }

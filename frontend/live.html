@@ -35,6 +35,8 @@
     私钥只在服务器内存用于签名，<b>绝不日志/返回/上传</b>。三腿非原子成交——部分腿成交会留单边敞口（已用 $5/腿 极小上限封顶）。
   </div>
   <div class="grid" id="cards"></div>
+  <h3>扫描心跳</h3>
+  <div id="scan" class="grid" style="margin-bottom:6px"></div>
   <div class="bar">
     <label>单腿上限 $<input type="number" id="cfg-leg" min="1" step="1" style="width:70px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px"/></label>
     <label>总上限 $<input type="number" id="cfg-total" min="1" step="10" style="width:80px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 6px"/></label>

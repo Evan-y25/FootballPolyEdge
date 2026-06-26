@@ -30,6 +30,27 @@ function render(d) {
     set("cfg-edge", (d.caps.min_edge * 100).toFixed(1));
   }
   if (d.error) $("msg").innerHTML = `<span class="bad">${d.error}</span>`;
+
+  // scan heartbeat
+  const sc = d.scan || {};
+  const now = Date.now() / 1000;
+  const age = sc.ts ? Math.round(now - sc.ts) : null;
+  const alive = age != null && age <= Math.max(10, (d.interval || 3) * 3);
+  const beat = !d.armed ? ["未武装·未扫描", "muted"]
+    : sc.ts == null || !sc.count ? ["等待首次扫描…", "warn"]
+    : alive ? [`扫描中 · ${age}s 前`, "ok"] : [`已停 · ${age}s 前`, "bad"];
+  const edgeCell = (e, lbl) => {
+    if (!e) return card(lbl, "—", "muted");
+    const pct = (e.edge * 100).toFixed(2) + "%";
+    const cls = e.edge >= (d.caps ? d.caps.min_edge : 0.008) ? "ok" : "bad";
+    return card(lbl, `<span class="${cls}">${pct}</span><div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px">${e.game || ""}</div>`);
+  };
+  $("scan").innerHTML =
+    card("状态", beat[0], beat[1]) +
+    card("扫描轮次", sc.count || 0) +
+    card("赛前场次 / 有深度", `${sc.games || 0} / ${sc.candidates || 0}`) +
+    edgeCell(sc.best_back, "最佳正套 edge(需≥阈值)") +
+    edgeCell(sc.best_lay, "最佳反套 edge(需≥阈值)");
   const ab = $("arm");
   ab.className = d.armed ? "on" : "off";
   ab.textContent = d.armed ? "⚔️ 已武装（点击解除）" : "未武装（点击武装真实下单）";
