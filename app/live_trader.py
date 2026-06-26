@@ -241,11 +241,10 @@ class LiveTrader:
             return False
         if not all(s and s > 0 for s in sizes):   # every leg needs real top-of-book depth
             return False
-        # crossed/locked book on any leg => the ask is stale (esp. during live play)
-        for q in qs:
-            if q.get("bid") and q["bid"] >= q["ask"]:
-                self._note(f"跳过: 交叉报价(买{q['bid']:.3f}≥卖{q['ask']:.3f}) 视为失效", "warn")
-                return False
+        # crossed/locked book on any leg => the ask is stale (esp. during live play).
+        # Silent skip — logging every 3s scan would flood the log.
+        if any(q.get("bid") and q["bid"] >= q["ask"] for q in qs):
+            return False
         edge = payout - sum(asks)                  # profit per set ($)
         return self.min_edge <= edge <= config.LIVE_MAX_EDGE
 

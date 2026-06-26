@@ -101,9 +101,11 @@ function edgeSpan(label, edge, depthOk) {
 function gameDetail(o) {
   const rows = LEGS.map(([k, zh]) => {
     const l = o[k] || {};
+    const xY = l.bid && l.ask && l.bid >= l.ask ? ' class="bad"' : "";  // crossed YES
+    const xN = l.no_bid && l.no_ask && l.no_bid >= l.no_ask ? ' class="bad"' : "";
     return `<tr><td>${zh}</td>
-      <td>${f(l.bid)}</td><td>${f(l.ask)} <span class="muted">(${sz(l.ask_size)})</span></td>
-      <td>${f(l.no_bid)}</td><td>${f(l.no_ask)} <span class="muted">(${sz(l.no_ask_size)})</span></td></tr>`;
+      <td>${f(l.bid)}</td><td${xY}>${f(l.ask)} <span class="muted">(${sz(l.ask_size)})</span>${xY ? " ⚠️" : ""}</td>
+      <td>${f(l.no_bid)}</td><td${xN}>${f(l.no_ask)} <span class="muted">(${sz(l.no_ask_size)})</span>${xN ? " ⚠️" : ""}</td></tr>`;
   }).join("");
   return `<table class="gtable"><thead><tr>
     <th>腿</th><th>YES买</th><th>YES卖(量)</th><th>NO买</th><th>NO卖(量)</th></tr></thead>
@@ -115,14 +117,20 @@ function legSums(o) {
   const na = LEGS.map(([k]) => (o[k] || {}).no_ask);
   const ys = LEGS.map(([k]) => (o[k] || {}).ask_size);
   const ns = LEGS.map(([k]) => (o[k] || {}).no_ask_size);
+  const yb = LEGS.map(([k]) => (o[k] || {}).bid);
+  const nb = LEGS.map(([k]) => (o[k] || {}).no_bid);
   const ok = (arr) => arr.every((x) => x && x > 0);
+  // crossed book (bid >= ask) on any leg => that ask is stale/phantom
+  const crossed = (asks, bids) => asks.some((a, i) => a && bids[i] && bids[i] >= a);
   const yesAskSum = ok(ya) ? ya.reduce((a, b) => a + b, 0) : null;
   const noAskSum = ok(na) ? na.reduce((a, b) => a + b, 0) : null;
+  const crossedYes = crossed(ya, yb), crossedNo = crossed(na, nb);
   return {
-    yesAskSum, noAskSum,
+    yesAskSum, noAskSum, crossedYes, crossedNo,
     backEdge: yesAskSum == null ? null : 1 - yesAskSum,
     layEdge: noAskSum == null ? null : 2 - noAskSum,
-    depthYes: ok(ys), depthNo: ok(ns),
+    // "real" only if every leg has depth AND no leg is crossed
+    depthYes: ok(ys) && !crossedYes, depthNo: ok(ns) && !crossedNo,
   };
 }
 
@@ -142,9 +150,12 @@ function renderGames(snap) {
     const o = g.onex2, s = legSums(o), open = expandedGames.has(g.slug);
     const live = g.status === "live";
     const isCand = !live && (s.depthYes || s.depthNo);
+    const pill = (crossed, depthOk, sum) =>
+      crossed ? '<span class="pill">⚠️交叉/失效</span>'
+      : (sum != null && !depthOk ? '<span class="pill">THIN</span>' : "");
     const sum = `<div class="gsum">
-      <span>YES卖价和 <b>${s.yesAskSum == null ? "—" : f(s.yesAskSum)}</b> → ${edgeSpan("正套", s.backEdge, s.depthYes)} ${s.yesAskSum != null && !s.depthYes ? '<span class="pill">THIN</span>' : ""}</span>
-      <span>NO卖价和 <b>${s.noAskSum == null ? "—" : f(s.noAskSum)}</b> → ${edgeSpan("反套", s.layEdge, s.depthNo)} ${s.noAskSum != null && !s.depthNo ? '<span class="pill">THIN</span>' : ""}</span>
+      <span>YES卖价和 <b>${s.yesAskSum == null ? "—" : f(s.yesAskSum)}</b> → ${edgeSpan("正套", s.backEdge, s.depthYes)} ${pill(s.crossedYes, s.depthYes, s.yesAskSum)}</span>
+      <span>NO卖价和 <b>${s.noAskSum == null ? "—" : f(s.noAskSum)}</b> → ${edgeSpan("反套", s.layEdge, s.depthNo)} ${pill(s.crossedNo, s.depthNo, s.noAskSum)}</span>
       <span class="muted">overround ${f(o.overround, 3)}</span>
     </div>`;
     return `<div class="gitem ${open ? "open" : ""}" data-slug="${g.slug}">
