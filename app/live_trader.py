@@ -203,7 +203,7 @@ class LiveTrader:
         best_back = best_lay = None   # {"edge", "game"} — closest-to-arb with real depth
         for g in self.state.games:
             legs = [g.home_win, g.draw, g.away_win]
-            if not all(legs) or g.status() == "live":
+            if not all(legs):          # live games ARE scanned now (no status skip)
                 continue
             scanned += 1
             yq = [self.state.token_best(o.yes_token) for o in legs]
@@ -221,22 +221,31 @@ class LiveTrader:
                 e = round(2.0 - sum(n_asks), 4)
                 if best_lay is None or e > best_lay["edge"]:
                     best_lay = {"edge": e, "game": name}
-            if (g.slug, "back") not in held and self._valid_arb(y_asks, y_sizes, 1.0):
+            if (g.slug, "back") not in held and self._valid_arb(yq, 1.0):
                 opened += self._execute(g, "back", legs, "yes", y_asks, y_sizes)
-            if (g.slug, "lay") not in held and self._valid_arb(n_asks, n_sizes, 2.0):
+            if (g.slug, "lay") not in held and self._valid_arb(nq, 2.0):
                 opened += self._execute(g, "lay", legs, "no", n_asks, n_sizes)
         self.scan = {"ts": int(time.time()), "count": self.scan["count"] + 1,
                      "games": scanned, "candidates": candidates,
                      "best_back": best_back, "best_lay": best_lay}
         return {"opened": opened}
 
-    def _valid_arb(self, asks, sizes, payout) -> bool:
-        """Real arb gate: all legs priced AND have real depth, profit/set in (min,max].
-        payout=1 (back, buy YES) or 2 (lay, buy NO). Rejects stale/thin artifacts."""
+    def _valid_arb(self, qs, payout) -> bool:
+        """Real arb gate. qs = [quote dicts] for the 3 legs (bid/ask/sizes).
+        payout=1 (back, buy YES) or 2 (lay, buy NO). Rejects stale/thin artifacts.
+        Live games are scanned, so crossed books (bid>ask = stale price) are the
+        main artifact to reject — hitting a stale ask just leaves one-sided risk."""
+        asks = [q["ask"] for q in qs]
+        sizes = [q["ask_size"] for q in qs]
         if not all(a and a > 0 for a in asks):
             return False
         if not all(s and s > 0 for s in sizes):   # every leg needs real top-of-book depth
             return False
+        # crossed/locked book on any leg => the ask is stale (esp. during live play)
+        for q in qs:
+            if q.get("bid") and q["bid"] >= q["ask"]:
+                self._note(f"跳过: 交叉报价(买{q['bid']:.3f}≥卖{q['ask']:.3f}) 视为失效", "warn")
+                return False
         edge = payout - sum(asks)                  # profit per set ($)
         return self.min_edge <= edge <= config.LIVE_MAX_EDGE
 
