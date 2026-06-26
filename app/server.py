@@ -80,8 +80,17 @@ class Broadcaster:
                 self.clients.discard(ws)
 
 
+_NO_CACHE = {"Cache-Control": "no-cache, must-revalidate"}
+
+
+def _page(name: str) -> web.FileResponse:
+    """FileResponse for a frontend asset, forcing the browser to revalidate so
+    deploys take effect without a manual hard-refresh."""
+    return web.FileResponse(FRONTEND_DIR / name, headers=_NO_CACHE)
+
+
 async def _index(request: web.Request) -> web.Response:
-    return web.FileResponse(FRONTEND_DIR / "index.html")
+    return _page("index.html")
 
 
 async def _static(request: web.Request) -> web.Response:
@@ -89,7 +98,7 @@ async def _static(request: web.Request) -> web.Response:
     path = FRONTEND_DIR / name
     if not path.is_file() or path.parent != FRONTEND_DIR:
         raise web.HTTPNotFound()
-    return web.FileResponse(path)
+    return web.FileResponse(path, headers=_NO_CACHE)
 
 
 async def _api_games(request: web.Request) -> web.Response:
@@ -152,7 +161,7 @@ async def _api_evolution(request: web.Request) -> web.Response:
 
 
 async def _replay_page(request: web.Request) -> web.Response:
-    return web.FileResponse(FRONTEND_DIR / "replay.html")
+    return _page("replay.html")
 
 
 async def _api_replay_games(request: web.Request) -> web.Response:
@@ -175,7 +184,7 @@ async def _api_replay(request: web.Request) -> web.Response:
 
 
 async def _live_page(request: web.Request) -> web.Response:
-    return web.FileResponse(FRONTEND_DIR / "live.html")
+    return _page("live.html")
 
 
 async def _api_live(request: web.Request) -> web.Response:
@@ -231,7 +240,7 @@ async def _api_live_arm(request: web.Request) -> web.Response:
 
 
 async def _drawarb_page(request: web.Request) -> web.Response:
-    return web.FileResponse(FRONTEND_DIR / "drawarb.html")
+    return _page("drawarb.html")
 
 
 async def _api_drawarb(request: web.Request) -> web.Response:
