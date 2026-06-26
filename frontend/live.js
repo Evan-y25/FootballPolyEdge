@@ -1,6 +1,8 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 let armed = false;
+let minEdge = 0.008;
+const expandedGames = new Set();
 
 function card(k, v, cls = "") { return `<div class="card"><div class="k">${k}</div><div class="v ${cls}">${v}</div></div>`; }
 
@@ -24,6 +26,7 @@ function render(d) {
   if (d.onchain_error) $("msg").innerHTML = `<span class="bad">链上查询: ${d.onchain_error}</span>`;
   // seed sizing inputs (only when not focused, so typing isn't overwritten)
   if (d.caps) {
+    minEdge = d.caps.min_edge;
     const set = (id, v) => { const e = $(id); if (e && document.activeElement !== e) e.value = v; };
     set("cfg-leg", d.caps.per_leg);
     set("cfg-total", d.caps.total);
@@ -83,6 +86,92 @@ function render(d) {
 }
 
 async function fetchLive() { try { render(await (await fetch("/api/live")).json()); } catch (e) {} }
+
+// ---- scanned-games list -------------------------------------------------
+const f = (x, d = 3) => (x == null ? "—" : Number(x).toFixed(d));
+const sz = (x) => (x ? Math.round(x).toLocaleString() : "0");
+const LEGS = [["home", "主胜"], ["draw", "平"], ["away", "客胜"]];
+
+function edgeSpan(label, edge, depthOk) {
+  if (edge == null) return `${label} <span class="muted">—</span>`;
+  const cls = edge >= minEdge && depthOk ? "ok" : "bad";
+  return `${label} <span class="${cls}">${(edge * 100).toFixed(2)}%</span>`;
+}
+
+function gameDetail(o) {
+  const rows = LEGS.map(([k, zh]) => {
+    const l = o[k] || {};
+    return `<tr><td>${zh}</td>
+      <td>${f(l.bid)}</td><td>${f(l.ask)} <span class="muted">(${sz(l.ask_size)})</span></td>
+      <td>${f(l.no_bid)}</td><td>${f(l.no_ask)} <span class="muted">(${sz(l.no_ask_size)})</span></td></tr>`;
+  }).join("");
+  return `<table class="gtable"><thead><tr>
+    <th>腿</th><th>YES买</th><th>YES卖(量)</th><th>NO买</th><th>NO卖(量)</th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+}
+
+function legSums(o) {
+  const ya = LEGS.map(([k]) => (o[k] || {}).ask);
+  const na = LEGS.map(([k]) => (o[k] || {}).no_ask);
+  const ys = LEGS.map(([k]) => (o[k] || {}).ask_size);
+  const ns = LEGS.map(([k]) => (o[k] || {}).no_ask_size);
+  const ok = (arr) => arr.every((x) => x && x > 0);
+  const yesAskSum = ok(ya) ? ya.reduce((a, b) => a + b, 0) : null;
+  const noAskSum = ok(na) ? na.reduce((a, b) => a + b, 0) : null;
+  return {
+    yesAskSum, noAskSum,
+    backEdge: yesAskSum == null ? null : 1 - yesAskSum,
+    layEdge: noAskSum == null ? null : 2 - noAskSum,
+    depthYes: ok(ys), depthNo: ok(ns),
+  };
+}
+
+function renderGames(snap) {
+  const el = $("games"); if (!el) return;
+  const games = (snap.games || []).filter((g) => g.onex2 && g.onex2.home && g.onex2.draw && g.onex2.away);
+  // pre-match candidates with the best back edge float to the top
+  const score = (g) => {
+    const s = legSums(g.onex2);
+    const pre = g.status !== "live";
+    const best = Math.max(s.backEdge ?? -9, s.layEdge ?? -9);
+    return (pre ? 0 : 1) * 1e6 - best; // pre-match first, then by closeness to arb
+  };
+  games.sort((a, b) => score(a) - score(b));
+  const cnt = $("games-count"); if (cnt) cnt.textContent = `(${games.length} 场)`;
+  el.innerHTML = games.map((g) => {
+    const o = g.onex2, s = legSums(o), open = expandedGames.has(g.slug);
+    const live = g.status === "live";
+    const isCand = !live && (s.depthYes || s.depthNo);
+    const sum = `<div class="gsum">
+      <span>YES卖价和 <b>${s.yesAskSum == null ? "—" : f(s.yesAskSum)}</b> → ${edgeSpan("正套", s.backEdge, s.depthYes)} ${s.yesAskSum != null && !s.depthYes ? '<span class="pill">THIN</span>' : ""}</span>
+      <span>NO卖价和 <b>${s.noAskSum == null ? "—" : f(s.noAskSum)}</b> → ${edgeSpan("反套", s.layEdge, s.depthNo)} ${s.noAskSum != null && !s.depthNo ? '<span class="pill">THIN</span>' : ""}</span>
+      <span class="muted">overround ${f(o.overround, 3)}</span>
+    </div>`;
+    return `<div class="gitem ${open ? "open" : ""}" data-slug="${g.slug}">
+      <div class="ghead">
+        <span class="garrow">▸</span>
+        <span class="gname">${g.home} vs ${g.away}</span>
+        <span class="gedge">正套 <span class="${(s.backEdge ?? -9) >= minEdge && s.depthYes ? "ok" : "muted"}">${s.backEdge == null ? "—" : (s.backEdge * 100).toFixed(1) + "%"}</span></span>
+        <span class="gedge">反套 <span class="${(s.layEdge ?? -9) >= minEdge && s.depthNo ? "ok" : "muted"}">${s.layEdge == null ? "—" : (s.layEdge * 100).toFixed(1) + "%"}</span></span>
+        <span class="gstat ${live ? "live" : ""}">${live ? "进行中" : (isCand ? "赛前·扫描中" : "赛前·无深度")}</span>
+      </div>
+      <div class="gbody">${gameDetail(o)}${sum}</div>
+    </div>`;
+  }).join("") || `<div class="muted" style="padding:4px 0">暂无已配对的 1X2 比赛。</div>`;
+}
+
+async function fetchGames() {
+  try { renderGames(await (await fetch("/api/games")).json()); } catch (e) {}
+}
+
+// expand/collapse via delegation (survives the 3s refresh)
+const gamesEl = $("games");
+if (gamesEl) gamesEl.addEventListener("click", (ev) => {
+  const item = ev.target.closest(".gitem"); if (!item) return;
+  const slug = item.dataset.slug;
+  if (expandedGames.has(slug)) expandedGames.delete(slug); else expandedGames.add(slug);
+  item.classList.toggle("open");
+});
 
 $("test").addEventListener("click", async () => {
   $("msg").textContent = "连接中…";
@@ -148,5 +237,6 @@ function hasSelection() {
   return !!(s && String(s).length > 0);
 }
 fetchLive();
+fetchGames();
 // don't re-render while the user is selecting/copying text (it would clear the selection)
-setInterval(() => { if (!hasSelection()) fetchLive(); }, 3000);
+setInterval(() => { if (!hasSelection()) { fetchLive(); fetchGames(); } }, 3000);

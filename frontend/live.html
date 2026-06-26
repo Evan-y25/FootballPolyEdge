@@ -25,6 +25,23 @@
     h3{padding:0 20px;margin:18px 0 6px;font-size:13px;color:var(--muted)}
     .log{font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.6;padding:6px 20px;max-height:240px;overflow:auto}
     .log .warn{color:var(--gold)}
+    .games{padding:0 20px}
+    .gitem{border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--panel);overflow:hidden}
+    .ghead{display:flex;align-items:center;gap:12px;padding:9px 12px;cursor:pointer;font-size:13px}
+    .ghead:hover{background:var(--panel2)}
+    .gname{font-weight:600;flex:1}
+    .gstat{font-size:11px;padding:1px 7px;border-radius:10px;border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+    .gstat.live{color:var(--gold);border-color:var(--gold)}
+    .gedge{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .gbody{padding:8px 12px 12px;border-top:1px solid var(--border);display:none}
+    .gitem.open .gbody{display:block}
+    .gitem.open .garrow{transform:rotate(90deg)}
+    .garrow{color:var(--muted);transition:transform .15s;display:inline-block}
+    .gtable{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+    .gtable th,.gtable td{padding:3px 8px;text-align:right;border-bottom:1px solid var(--border)}
+    .gtable th:first-child,.gtable td:first-child{text-align:left}
+    .gsum{margin-top:8px;font-size:12px;display:flex;gap:8px 20px;flex-wrap:wrap;align-items:center}
+    .pill{font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--gold);color:var(--gold)}
   </style>
 </head>
 <body>
@@ -48,6 +65,8 @@
     <button id="arm" class="off">未武装（点击武装）</button>
     <span id="msg" class="muted"></span>
   </div>
+  <h3>扫描中的比赛 <span id="games-count" class="muted" style="font-size:11px;font-weight:400"></span></h3>
+  <div id="games" class="games"></div>
   <h3>实盘套利篮子</h3>
   <div id="baskets"></div>
   <h3 style="display:flex;align-items:center;gap:10px">日志
