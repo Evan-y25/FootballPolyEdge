@@ -45,7 +45,8 @@ function render(d) {
     const cls = e.edge >= (d.caps ? d.caps.min_edge : 0.008) ? "ok" : "bad";
     return card(lbl, `<span class="${cls}">${pct}</span><div style="font-size:11px;color:var(--muted);font-weight:400;margin-top:2px">${e.game || ""}</div>`);
   };
-  $("scan").innerHTML =
+  const scanEl = $("scan");
+  if (scanEl) scanEl.innerHTML =
     card("状态", beat[0], beat[1]) +
     card("扫描轮次", sc.count || 0) +
     card("赛前场次 / 有深度", `${sc.games || 0} / ${sc.candidates || 0}`) +
