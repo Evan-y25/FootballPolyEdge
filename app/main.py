@@ -69,6 +69,8 @@ async def sampler_loop(state: AppState, store: Store) -> None:
                 store.upsert_game(g.slug, g.home, g.away, g.kickoff, now)
                 legs = [("1x2", o) for o in (g.home_win, g.draw, g.away_win) if o]
                 legs += [("score", o) for o in g.scores]
+                for grp in g.extra:
+                    legs += [(grp.key, o) for o in grp.outcomes]
                 for market, o in legs:
                     for side, token in (("yes", o.yes_token), ("no", o.no_token)):
                         if not token:

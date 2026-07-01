@@ -55,10 +55,21 @@ def build_series(store, slug: str, n_points: int = 600) -> Optional[dict]:
             arr.append(round(last, 4) if last is not None else None)
         return arr
 
-    onex2, scores = {}, {}
+    # markets: {market_key: {label: series}}
+    markets: dict = {}
     for (market, label), pts in groups.items():
-        series = forward_fill(pts)
-        (onex2 if market == "1x2" else scores)[label] = series
+        markets.setdefault(market, {})[label] = forward_fill(pts)
+
+    onex2 = markets.get("1x2", {})
+    scores = markets.get("score", {})
+
+    # ordered group metadata for the frontend selector
+    from .gamma import GROUP_TITLES
+    order = ["1x2", "score", "team_to_advance", "spread", "totals", "team_totals",
+             "btts", "first_to_score", "halves", "extra_time", "penalty", "more_other"]
+    present = sorted(markets.keys(), key=lambda k: order.index(k) if k in order else 99)
+    group_meta = [{"key": k, "title": GROUP_TITLES.get(k, k),
+                   "labels": sorted(markets[k].keys())} for k in present]
 
     step_sec = max(1.0, (grid[-1] - grid[0]) / (n_points - 1))
     goals = _detect_goals(grid, onex2, ko, step_sec)
@@ -68,7 +79,8 @@ def build_series(store, slug: str, n_points: int = 600) -> Optional[dict]:
         "slug": slug, "home": meta["home"], "away": meta["away"],
         "kickoff": meta.get("kickoff"), "kickoff_ts": _kickoff_ts(meta.get("kickoff")),
         "resolution": res,
-        "x": grid, "onex2": onex2, "scores": scores, "goals": goals,
+        "x": grid, "onex2": onex2, "scores": scores,
+        "markets": markets, "groups": group_meta, "goals": goals,
     }
 
 

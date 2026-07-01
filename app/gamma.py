@@ -24,22 +24,27 @@ from . import config
 logger = logging.getLogger(__name__)
 
 EXACT_SCORE_SUFFIX = "-exact-score"
+MORE_MARKETS_SUFFIX = "-more-markets"
+FIRST_SCORE_SUFFIX = "-first-to-score"
 
 
 def _event_kind(event: Dict[str, Any]) -> Tuple[str, str]:
     """
-    Classify an event. Returns (kind, base_slug); kind in {"1x2", "score", "other"}.
+    Classify an event. Returns (kind, base_slug); kind in
+    {"1x2", "score", "more", "first_score", "other"}.
 
-    The exact-score event reliably ends with `-exact-score` in its slug.
-    A *base* 1X2 game's title is just "A vs. B" with NO " - {qualifier}" suffix;
-    derivatives ("- Halftime Result", "- Total Corners", "- More Markets", ...)
-    always carry a " - " qualifier and are skipped. (Slug date position is
-    inconsistent across derivatives, so the title is the reliable signal.)
+    Derivative events share the base slug plus a suffix. We capture the base
+    1X2, exact-score, the big "More Markets" bundle (spread/totals/BTTS/…), and
+    First-to-Score. Others (halftime, corners, player props) are skipped.
     """
     slug = event.get("slug", "")
     title = event.get("title", "")
     if slug.endswith(EXACT_SCORE_SUFFIX):
         return "score", slug[: -len(EXACT_SCORE_SUFFIX)]
+    if slug.endswith(MORE_MARKETS_SUFFIX):
+        return "more", slug[: -len(MORE_MARKETS_SUFFIX)]
+    if slug.endswith(FIRST_SCORE_SUFFIX):
+        return "first_score", slug[: -len(FIRST_SCORE_SUFFIX)]
     if " vs" in title and " - " not in title:
         return "1x2", slug
     return "other", slug
@@ -63,8 +68,18 @@ class Outcome:
 
 
 @dataclass
+class MarketGroup:
+    """A named group of related outcomes (e.g. all Spread lines, all Totals)."""
+
+    key: str                # stable id used as the tick `market` value
+    title: str              # display name
+    outcomes: List[Outcome] = field(default_factory=list)
+
+
+@dataclass
 class Game:
-    """A World Cup match: a 1X2 triple plus an exact-score book."""
+    """A World Cup match: a 1X2 triple, an exact-score book, and extra market
+    groups (spread / totals / BTTS / first-to-score / …) captured for replay."""
 
     slug: str
     home: str
@@ -74,6 +89,7 @@ class Game:
     draw: Optional[Outcome] = None
     away_win: Optional[Outcome] = None
     scores: List[Outcome] = field(default_factory=list)
+    extra: List[MarketGroup] = field(default_factory=list)
 
     @property
     def onex2(self) -> List[Outcome]:
@@ -85,6 +101,9 @@ class Game:
             tokens.extend([o.yes_token, o.no_token])
         for o in self.scores:
             tokens.extend([o.yes_token, o.no_token])
+        for grp in self.extra:
+            for o in grp.outcomes:
+                tokens.extend([o.yes_token, o.no_token])
         return [t for t in tokens if t]
 
     def kickoff_dt(self) -> Optional[datetime]:
@@ -263,6 +282,88 @@ def _attach_scores(game: Game, event: Dict[str, Any]) -> None:
         )
 
 
+# Display order + titles for the extra market groups.
+_MORE_GROUP_ORDER = ["team_to_advance", "spread", "totals", "team_totals",
+                     "btts", "halves", "extra_time", "penalty", "more_other"]
+GROUP_TITLES = {
+    "1x2": "1X2 胜平负", "score": "波胆 Exact Score",
+    "team_to_advance": "晋级 Team to Advance", "spread": "让分 Spread",
+    "totals": "总分 Total Goals", "team_totals": "各队总分 Team Totals",
+    "btts": "双方进球 BTTS", "halves": "上下半场 Halves",
+    "extra_time": "加时 Extra Time", "penalty": "点球大战 Penalty",
+    "first_to_score": "首个进球 First to Score", "more_other": "其他 Other",
+}
+
+
+def _more_group(question: str, git: str, home: str, away: str) -> Tuple[str, str]:
+    """Classify one 'More Markets' market -> (group_key, label)."""
+    g = git or ""
+    gl = g.lower()
+    ql = (question or "").lower()
+    if "team to advance" in gl:
+        return "team_to_advance", (g or "Advance")
+    if ql.startswith("spread:"):
+        return "spread", g                       # "England (-1.5)"
+    if "penalty shootout" in gl:
+        return "penalty", "Yes"
+    if "extra time" in gl:
+        return "extra_time", "Yes"
+    if "1st half" in gl or "2nd half" in gl or "first half" in gl or "second half" in gl:
+        return "halves", g
+    if "both teams to score" in gl:
+        return "btts", "Yes"
+    if "o/u" in gl:
+        if (home and g.startswith(home)) or (away and g.startswith(away)):
+            return "team_totals", g              # "England O/U 1.5"
+        return "totals", g                       # "O/U 2.5"
+    return "more_other", g
+
+
+def _attach_more(game: Game, event: Dict[str, Any]) -> None:
+    groups: Dict[str, MarketGroup] = {}
+    for m in event.get("markets", []):
+        if m.get("closed"):
+            continue
+        yes, no = _tokens(m)
+        if not yes:
+            continue
+        iy, ino = _prices(m)
+        key, label = _more_group(m.get("question", ""), m.get("groupItemTitle", ""),
+                                 game.home, game.away)
+        grp = groups.get(key)
+        if grp is None:
+            grp = MarketGroup(key=key, title=GROUP_TITLES.get(key, key))
+            groups[key] = grp
+        grp.outcomes.append(Outcome(
+            market_id=str(m.get("id", "")), label=label, question=m.get("question", ""),
+            yes_token=yes, no_token=no, init_yes=iy, init_no=ino,
+            neg_risk=bool(m.get("negRisk") or m.get("negRiskMarketID")),
+        ))
+    game.extra.extend(sorted(
+        groups.values(),
+        key=lambda gp: _MORE_GROUP_ORDER.index(gp.key) if gp.key in _MORE_GROUP_ORDER else 99,
+    ))
+
+
+def _attach_first_score(game: Game, event: Dict[str, Any]) -> None:
+    grp = MarketGroup(key="first_to_score", title=GROUP_TITLES["first_to_score"])
+    for m in event.get("markets", []):
+        if m.get("closed"):
+            continue
+        yes, no = _tokens(m)
+        if not yes:
+            continue
+        iy, ino = _prices(m)
+        grp.outcomes.append(Outcome(
+            market_id=str(m.get("id", "")), label=m.get("groupItemTitle", "") or "?",
+            question=m.get("question", ""), yes_token=yes, no_token=no,
+            init_yes=iy, init_no=ino,
+            neg_risk=bool(m.get("negRisk") or m.get("negRiskMarketID")),
+        ))
+    if grp.outcomes:
+        game.extra.append(grp)
+
+
 def _score_label(group_title: str, home: str, away: str) -> str:
     """'Czechia 1 - 0 South Africa' -> '1 - 0'; keep 'Any Other Score' readable."""
     gt = group_title or ""
@@ -284,29 +385,39 @@ async def fetch_world_cup_games() -> List[Game]:
 
     onex2_events: Dict[str, Dict[str, Any]] = {}
     score_events: Dict[str, Dict[str, Any]] = {}
+    more_events: Dict[str, Dict[str, Any]] = {}
+    first_events: Dict[str, Dict[str, Any]] = {}
     for e in events:
         kind, base = _event_kind(e)
         if kind == "1x2":
             onex2_events[base] = e
         elif kind == "score":
             score_events[base] = e
-        # "other" (halftime-result, etc.) is skipped
+        elif kind == "more":
+            more_events[base] = e
+        elif kind == "first_score":
+            first_events[base] = e
+        # "other" (halftime-result, corners, player props, …) is skipped
 
     games: List[Game] = []
     for slug, event in onex2_events.items():
         game = _build_1x2(event)
         if not game:
             continue
-        score_event = score_events.get(slug)
-        if score_event:
-            _attach_scores(game, score_event)
+        if score_events.get(slug):
+            _attach_scores(game, score_events[slug])
+        if more_events.get(slug):
+            _attach_more(game, more_events[slug])
+        if first_events.get(slug):
+            _attach_first_score(game, first_events[slug])
         games.append(game)
 
     games.sort(key=lambda g: g.kickoff or "")
     logger.info(
-        "Discovered %d World Cup games (%d with exact-score)",
+        "Discovered %d World Cup games (%d w/ exact-score, %d w/ extra markets)",
         len(games),
         sum(1 for g in games if g.scores),
+        sum(1 for g in games if g.extra),
     )
     return games
 

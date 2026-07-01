@@ -15,6 +15,8 @@
     select,label{font-size:13px}
     select{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:4px 8px;max-width:420px}
     .toolbar{display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap;border-bottom:1px solid var(--border);background:var(--panel)}
+    .groups{display:flex;gap:8px 16px;flex-wrap:wrap}
+    .groups label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
     .muted{color:var(--muted)}
     #info{padding:8px 20px;font-size:12px;color:var(--muted)}
     #info b.res{color:var(--green)}
@@ -30,14 +32,15 @@
     <select id="game"></select>
   </div>
   <div class="toolbar">
-    <label><input type="checkbox" id="show-1x2" checked /> 1X2 胜平负</label>
-    <label><input type="checkbox" id="show-scores" /> 波胆(17线)</label>
-    <span class="muted">竖线标注：<span class="k-ko">开赛</span> · <span class="k-home">疑似进球(主队方向)</span> / <span class="k-away">疑似进球(客队方向)</span> · Y轴=隐含概率%</span>
+    <div id="groups" class="groups"></div>
+  </div>
+  <div class="toolbar" style="border-top:none;padding-top:0">
+    <span class="muted">勾选要叠加的盘口分组 · 竖线标注：<span class="k-ko">开赛</span> · <span class="k-home">疑似进球(主队方向)</span> / <span class="k-away">疑似进球(客队方向)</span> · Y轴=隐含概率%</span>
   </div>
   <div id="info">选择一场比赛…</div>
   <div id="chart"></div>
   <div class="legend-note">
-    说明：每条线是该结果的<b>隐含概率</b>（YES 盘口 mid）。进球会让 1X2 概率瞬间跳变——竖线是用主胜概率突跳<b>自动检测</b>的疑似进球时刻（仅供参考，非官方进球事件）。勾选「波胆」可叠加 17 个比分线，观察进球后比分盘如何重新分布。
+    说明：每条线是该结果的<b>隐含概率</b>（YES 盘口 mid）。进球会让 1X2 概率瞬间跳变——竖线是用主胜概率突跳<b>自动检测</b>的疑似进球时刻（仅供参考，非官方进球事件）。上方按玩法分组勾选（1X2 / 波胆 / 让分 / 总分 / 各队总分 / BTTS / 首个进球 / 上下半场 / 加时 / 点球 …），可叠加对比进球时各盘口如何重新定价。
   </div>
   <script src="/uplot.iife.min.js"></script>
   <script src="/replay.js"></script>
