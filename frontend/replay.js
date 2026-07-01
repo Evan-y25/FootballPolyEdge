@@ -118,10 +118,12 @@ async function init() {
   sel.innerHTML = games.map((g) => {
     const tag = g.resolved ? "✓已结算" : "进行/未结算";
     const nm = (g.home && g.away) ? `${g.home} vs ${g.away}` : g.slug;
-    return `<option value="${g.slug}">${nm} · ${tag} · ${(g.ticks / 1000).toFixed(0)}k点</option>`;
+    const multi = g.ngroups >= 3 ? ` · ${g.ngroups}组盘口` : " · 仅1X2+波胆";
+    return `<option value="${g.slug}">${nm} · ${tag} · ${(g.ticks / 1000).toFixed(0)}k点${multi}</option>`;
   }).join("");
   sel.addEventListener("change", () => loadGame(sel.value));
-  const def = games.find((g) => g.resolved) || games[0];
+  // prefer a game that actually has the extra market groups (post-deploy games)
+  const def = games.find((g) => g.ngroups >= 3) || games.find((g) => g.resolved) || games[0];
   sel.value = def.slug;
   loadGame(def.slug);
 }

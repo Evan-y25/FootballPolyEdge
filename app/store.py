@@ -273,14 +273,16 @@ class Store:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT t.slug, COUNT(*) c, MIN(t.ts), MAX(t.ts), g.home, g.away, g.kickoff, "
-                "(SELECT COUNT(*) FROM resolutions r WHERE r.slug=t.slug) res "
+                "(SELECT COUNT(*) FROM resolutions r WHERE r.slug=t.slug) res, "
+                "COUNT(DISTINCT t.market) ngroups "
                 "FROM ticks t LEFT JOIN games g ON g.slug=t.slug "
                 "GROUP BY t.slug ORDER BY MAX(t.ts) DESC"
             ).fetchall()
         out = []
-        for slug, c, mn, mx, home, away, kickoff, res in rows:
+        for slug, c, mn, mx, home, away, kickoff, res, ngroups in rows:
             out.append({"slug": slug, "ticks": c, "first_ts": mn, "last_ts": mx,
-                        "home": home, "away": away, "kickoff": kickoff, "resolved": bool(res)})
+                        "home": home, "away": away, "kickoff": kickoff,
+                        "resolved": bool(res), "ngroups": ngroups})
         return out
 
     def yes_ticks(self, slug: str) -> List[tuple]:
