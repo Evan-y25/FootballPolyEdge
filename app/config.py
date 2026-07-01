@@ -33,6 +33,9 @@ REFRESH_INTERVAL = _int("REFRESH_INTERVAL", 60)
 
 # Max asset ids per websocket subscribe message (chunking).
 WS_SUBSCRIBE_CHUNK = _int("WS_SUBSCRIBE_CHUNK", 400)
+# Max assets per WS *connection*. The CLOB market channel silently caps a single
+# connection at ~1000 assets, so we shard across multiple connections.
+WS_SHARD_SIZE = _int("WS_SHARD_SIZE", 500)
 
 # Throttle for pushing updates to the browser (milliseconds).
 PUSH_THROTTLE_MS = _int("PUSH_THROTTLE_MS", 250)

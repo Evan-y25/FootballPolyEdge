@@ -83,14 +83,13 @@ class MarketWebSocket:
         self.url = url
         self.orderbooks: Dict[str, Orderbook] = {}
         self._assets: Set[str] = set()
-        self._ws: Optional[websockets.WebSocketClientProtocol] = None
         self._running = False
-        self._connected = False
+        self._shard_conns = 0            # number of currently-connected shard sockets
         self._on_update: Optional[UpdateCallback] = None
 
     @property
     def is_connected(self) -> bool:
-        return self._connected
+        return self._shard_conns > 0
 
     @property
     def subscribed_count(self) -> int:
@@ -108,18 +107,15 @@ class MarketWebSocket:
         self._assets = {t for t in token_ids if t}
 
     async def add_assets(self, token_ids: List[str]) -> None:
+        # Just grow the set; the run() supervisor re-shards to pick up new assets.
         new = [t for t in token_ids if t and t not in self._assets]
-        if not new:
-            return
-        self._assets.update(new)
-        if self._connected and self._ws:
-            await self._send_subscription(new)
+        if new:
+            self._assets.update(new)
 
-    async def _send_subscription(self, assets: List[str]) -> None:
+    async def _subscribe(self, ws, assets: List[str]) -> None:
         for i in range(0, len(assets), config.WS_SUBSCRIBE_CHUNK):
             chunk = assets[i : i + config.WS_SUBSCRIBE_CHUNK]
-            msg = {"assets_ids": chunk, "type": "MARKET"}
-            await self._ws.send(json.dumps(msg))
+            await ws.send(json.dumps({"assets_ids": chunk, "type": "MARKET"}))
             logger.info("Subscribed to %d assets (chunk)", len(chunk))
 
     def _emit(self, token_id: str) -> None:
@@ -155,41 +151,59 @@ class MarketWebSocket:
                 self._emit(token_id)
         # tick_size_change / last_trade_price: ignored for orderbook purposes
 
-    async def _run_once(self) -> None:
-        async with websockets.connect(
-            self.url, ping_interval=20, ping_timeout=10, max_size=None
-        ) as ws:
-            self._ws = ws
-            self._connected = True
-            logger.info("WebSocket connected to %s", self.url)
-            if self._assets:
-                await self._send_subscription(list(self._assets))
-            async for raw in ws:
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(data, list):
-                    for item in data:
-                        if isinstance(item, dict):
-                            self._handle_message(item)
-                elif isinstance(data, dict):
-                    self._handle_message(data)
-
-    async def run(self) -> None:
-        self._running = True
+    async def _run_shard(self, assets: List[str]) -> None:
+        """One self-reconnecting connection subscribed to a shard of assets."""
         while self._running:
             try:
-                await self._run_once()
+                async with websockets.connect(
+                    self.url, ping_interval=20, ping_timeout=10, max_size=None
+                ) as ws:
+                    self._shard_conns += 1
+                    try:
+                        logger.info("WS shard connected (%d assets)", len(assets))
+                        await self._subscribe(ws, assets)
+                        async for raw in ws:
+                            try:
+                                data = json.loads(raw)
+                            except json.JSONDecodeError:
+                                continue
+                            if isinstance(data, list):
+                                for item in data:
+                                    if isinstance(item, dict):
+                                        self._handle_message(item)
+                            elif isinstance(data, dict):
+                                self._handle_message(data)
+                    finally:
+                        self._shard_conns -= 1
             except Exception as exc:  # noqa: BLE001
-                logger.warning("WebSocket error: %s", exc)
-            finally:
-                self._connected = False
-                self._ws = None
+                logger.warning("WS shard error: %s", exc)
             if not self._running:
                 break
-            logger.info("Reconnecting websocket in 5s...")
             await asyncio.sleep(5)
+
+    async def run(self) -> None:
+        """Supervisor: shard assets across connections (CLOB caps ~1000/conn),
+        re-sharding when the asset set changes (new games discovered)."""
+        self._running = True
+        shard = max(1, config.WS_SHARD_SIZE)
+        while self._running:
+            assets = list(self._assets)
+            snapshot = set(assets)
+            shards = [assets[i : i + shard] for i in range(0, len(assets), shard)]
+            tasks = [asyncio.create_task(self._run_shard(s)) for s in shards]
+            logger.info("WS running %d shard(s) for %d assets", len(tasks), len(assets))
+            try:
+                while self._running:
+                    await asyncio.sleep(5)
+                    if set(self._assets) != snapshot:   # assets changed -> re-shard
+                        logger.info("WS asset set changed (%d -> %d) -> re-sharding",
+                                    len(snapshot), len(self._assets))
+                        break
+            finally:
+                for t in tasks:
+                    t.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                self._shard_conns = 0
 
     def stop(self) -> None:
         self._running = False
